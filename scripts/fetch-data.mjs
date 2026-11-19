@@ -1,6 +1,7 @@
 // Hämtar automatiskt data om Grangex och skriver data/data.json.
 // Körs av GitHub Actions (se .github/workflows/update.yml). Inga beroenden – kräver Node 20+.
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { buildDailyAnalysis, todaySE } from "./daily-analysis.mjs";
 
 const OUT = new URL("../data/data.json", import.meta.url);
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
@@ -76,7 +77,7 @@ async function main() {
   let prev = {};
   try { prev = JSON.parse(await readFile(OUT, "utf8")); } catch {}
   const errors = [];
-  const out = { updated: new Date().toISOString(), quote: prev.quote || null, news: prev.news || [], errors };
+  const out = { updated: new Date().toISOString(), quote: prev.quote || null, news: prev.news || [], analyses: prev.analyses || [], errors };
 
   try { out.quote = await fetchQuote(); }
   catch (e) { errors.push(`Aktiekurs: ${e.message}`); }
@@ -97,6 +98,17 @@ async function main() {
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
     .filter((n) => { const k = n.title.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })
     .slice(0, MAX_NEWS);
+
+  // Daglig analys – en per dag efter börsens stängning (efter 18:00 svensk tid), eller direkt om FORCE_ANALYSIS=1
+  const hourSE = +new Date().toLocaleString("sv-SE", { timeZone: "Europe/Stockholm", hour: "2-digit", hour12: false });
+  const due = out.analyses[0]?.date !== todaySE() && (hourSE >= 18 || !out.analyses.length);
+  if (due || process.env.FORCE_ANALYSIS === "1") {
+    try {
+      const a = await buildDailyAnalysis(out);
+      if (a) out.analyses = [a, ...out.analyses.filter((x) => x.date !== a.date)].slice(0, 120);
+      if (a) console.log(`Daglig analys skapad (${a.ai ? "Claude" : "regelbaserad"})`);
+    } catch (e) { errors.push(`Daglig analys: ${e.message}`); }
+  }
 
   await mkdir(new URL("../data/", import.meta.url), { recursive: true });
   await writeFile(OUT, JSON.stringify(out) + "\n");

@@ -1,0 +1,7 @@
+{
+  "name": "grangex-bevakning",
+  "private": true,
+  "description": "Datainsamling och daglig analys för appen Grangex Bevakning",
+  "scripts": { "fetch": "node scripts/fetch-data.mjs" },
+  "dependencies": { "@anthropic-ai/sdk": "^1.11.0" }
+}

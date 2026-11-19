@@ -5,6 +5,11 @@ on:
     - cron: "17 */2 * * *"   # varannan timme
   push:
   workflow_dispatch:
+    inputs:
+      force_analysis:
+        description: "Skapa en ny daglig analys direkt"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,8 +31,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Hämta kurs och nyheter
+      - run: npm ci
+      - name: Hämta kurs, nyheter och gör daglig analys
         run: node scripts/fetch-data.mjs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # valfri – ger analystext skriven av Claude
+          GRANGEX_SHARES: "6850"
+          FORCE_ANALYSIS: ${{ inputs.force_analysis && '1' || '0' }}
       - name: Spara data i repot (bygger upp nyhetsarkivet)
         run: |
           git config user.name "grangex-bot"

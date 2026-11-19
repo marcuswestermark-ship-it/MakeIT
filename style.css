@@ -82,3 +82,36 @@ main { padding: 12px 16px; max-width: 720px; margin: 0 auto; }
 .tabs button.on { color: var(--accent); }
 
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: #2d3a4b; color: var(--text); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 10; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+
+/* Prognos */
+.primary.full { width: 100%; padding: 14px; font-size: 16px; }
+#calcInfo { margin: 6px 0 12px; }
+.scen button { font-size: 15px; padding: 9px 0; }
+.scen-card .big { font-size: 30px; }
+.scen-card.bear { border-color: #6b2f2f; } .scen-card.base { border-color: #3a4a5e; } .scen-card.bull { border-color: #2f6b4c; }
+.scen-rows { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 12px; margin-top: 10px; font-variant-numeric: tabular-nums; font-size: 14px; align-items: baseline; }
+.scen-rows .v { text-align: right; font-weight: 600; }
+.scen-rows .x { text-align: right; color: var(--muted); font-size: 12px; }
+.story { font-size: 13px; color: #c9d1db; margin: 8px 0 0; }
+.table-wrap { overflow-x: auto; }
+.ftable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ftable th, .ftable td { padding: 7px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ftable th:first-child, .ftable td:first-child { text-align: left; color: var(--muted); }
+.ftable th { font-weight: 600; font-size: 12px; color: var(--muted); }
+.ftable .sel { background: rgba(212,130,63,.12); color: var(--text); }
+.c-bear { color: var(--down); } .c-base { color: #8fb3ff; } .c-bull { color: var(--up); }
+.chart.tall { height: 220px; }
+.legend { display: flex; gap: 14px; margin-top: 6px; color: var(--muted); }
+.lg::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.lg.bear::before { background: var(--down); } .lg.base::before { background: #8fb3ff; } .lg.bull::before { background: var(--up); }
+.analysis { font-size: 14px; white-space: pre-wrap; color: #d5dbe3; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+.stats-grid div { background: var(--card2); border-radius: 8px; padding: 7px 8px; font-size: 12px; color: var(--muted); }
+.stats-grid b { display: block; font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
+details summary { cursor: pointer; color: var(--accent); padding: 6px 0; }
+.assump { display: grid; grid-template-columns: auto 1fr 1fr; gap: 8px 10px; align-items: center; margin-bottom: 12px; font-size: 13px; }
+.assump input { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card2); color: var(--text); font: inherit; }
+.assump .h { color: var(--muted); font-size: 12px; }
+.mini-forecast { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mini-forecast div { background: var(--card2); border-radius: 10px; padding: 8px; font-size: 12px; color: var(--muted); }
+.mini-forecast b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }

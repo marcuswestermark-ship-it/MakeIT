@@ -46,7 +46,7 @@ async function loadData(manual) {
 }
 
 // ---------- Rendering ----------
-function renderAll() { renderHeader(); renderOverview(); renderNews(); renderMine(); renderTimeline(); }
+function renderAll() { renderHeader(); renderOverview(); renderNews(); renderMine(); renderTimeline(); renderForecast(); }
 
 function renderHeader() {
   $("#updated").textContent = data.updated ? `Data hämtad ${ago(data.updated)}` : "Väntar på första automatiska hämtningen";
@@ -173,12 +173,122 @@ function renderTimeline() {
     own.map((e) => `<li class="mine"><div class="when">${dateSv(e.date)} · egen</div>${esc(e.title)}</li>`).join("");
 }
 
+// ---------- Prognos ----------
+const SC_KEYS = ["bear", "base", "bull"];
+const SC_ICON = { bear: "🐻", base: "⚖️", bull: "🐂" };
+const horizonLabel = (y) => (y === 0 ? "Nu" : `${y} år`);
+const assumptions = () => mine.assumptions || Forecast.defaultAssumptions();
+const forecastNow = () => {
+  const p = currentPrice();
+  return p == null ? null : Forecast.compute({ price: p, shares: mine.shares, assumptions: assumptions() });
+};
+
+function renderForecast() {
+  const fc = forecastNow(), sel = mine.scenario || "base";
+  document.querySelectorAll("#scenSeg button").forEach((b) => b.classList.toggle("on", b.dataset.s === sel));
+  const card = $("#scenCard");
+  card.className = "card scen-card " + sel;
+  if (!fc) {
+    const msg = `<div class="empty">Ingen kurs ännu – ange ”Egen kurs” under Mina data eller vänta på första automatiska hämtningen.</div>`;
+    card.innerHTML = msg; $("#fTable").innerHTML = ""; $("#fChart").innerHTML = ""; $("#miniForecast").innerHTML = msg;
+  } else {
+    const rows = fc[sel], a = assumptions()[sel], now = rows[0].value;
+    card.innerHTML = `<div class="label">${SC_ICON[sel]} ${Forecast.SCENARIOS[sel].name}-scenario · ${num(mine.shares, 0)} aktier</div>
+      <div class="big">${kr(rows.at(-1).value)}</div><div class="small muted">om 20 år (${rows.at(-1).year}) · antagande ${pct(a.early)}/år år 1–5, ${pct(a.late)}/år därefter</div>
+      <div class="scen-rows">${rows.map((r) => `<span>${horizonLabel(r.years)} <span class="muted small">${r.year}</span></span>
+        <span class="v">${kr(r.value)}</span><span class="x">${num(r.price, 2)} kr/aktie · ${r.years ? "×" + num(r.value / now, 1) : "idag"}</span>`).join("")}</div>
+      <p class="story">${esc(Forecast.SCENARIOS[sel].story)}</p>`;
+    $("#fTable").innerHTML = `<tr><th>Tid</th>${SC_KEYS.map((k) => `<th class="c-${k} ${k === sel ? "sel" : ""}">${Forecast.SCENARIOS[k].name}</th>`).join("")}</tr>` +
+      Forecast.HORIZONS.map((y, i) => `<tr><td>${horizonLabel(y)}</td>${SC_KEYS.map((k) => `<td class="${k === sel ? "sel" : ""}">${kr(fc[k][i].value)}</td>`).join("")}</tr>`).join("");
+    renderForecastChart(fc);
+    const i5 = Forecast.HORIZONS.indexOf(5);
+    $("#miniForecast").innerHTML = SC_KEYS.map((k) => `<div>${SC_ICON[k]} ${Forecast.SCENARIOS[k].name} · 5 år<b class="c-${k}">${kr(fc[k][i5].value)}</b></div>`).join("");
+  }
+  renderAssumptions(); renderAnalysis(); renderCalcHistory();
+}
+
+function renderForecastChart(fc) {
+  const el = $("#fChart"), W = el.clientWidth || 600, H = el.clientHeight || 220, P = 8, L = 54;
+  const all = SC_KEYS.flatMap((k) => fc[k].map((r) => r.value)).filter((v) => v > 0);
+  const lo = Math.log10(Math.min(...all)), hi = Math.log10(Math.max(...all));
+  const x = (y) => L + (y / 20) * (W - L - P), yv = (v) => H - P - ((Math.log10(Math.max(v, 1e-9)) - lo) / (hi - lo || 1)) * (H - 2 * P);
+  const col = { bear: "var(--down)", base: "#8fb3ff", bull: "var(--up)" };
+  const paths = SC_KEYS.map((k) => {
+    const sc = assumptions()[k], start = fc[k][0].value;
+    const d = Array.from({ length: 41 }, (_, i) => i / 2).map((y, i) => `${i ? "L" : "M"}${x(y).toFixed(1)},${yv(start * Forecast.factor(y, sc)).toFixed(1)}`).join("");
+    return `<path d="${d}" fill="none" stroke="${col[k]}" stroke-width="${k === (mine.scenario || "base") ? 3 : 1.5}"/>`;
+  }).join("");
+  const ticks = [];
+  for (let e = Math.floor(lo); e <= Math.ceil(hi); e++) for (const m of [1, 3]) { const v = m * 10 ** e; if (Math.log10(v) >= lo && Math.log10(v) <= hi) ticks.push(v); }
+  const tk = ticks.map((v) => `<line x1="${L}" x2="${W - P}" y1="${yv(v)}" y2="${yv(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${yv(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${v >= 1e6 ? num(v / 1e6, 0) + " M" : v >= 1e3 ? num(v / 1e3, 0) + " k" : num(v, 0)}</text>`).join("");
+  const xt = Forecast.HORIZONS.map((y) => `<text x="${x(y)}" y="${H - 1}" text-anchor="middle" font-size="10" fill="var(--muted)">${y ? y + "å" : ""}</text>`).join("");
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Prognosgraf">${tk}${xt}${paths}</svg>`;
+}
+
+function renderAssumptions() {
+  const a = assumptions(), f = $("#assumpForm");
+  if (f.contains(document.activeElement)) return;
+  f.innerHTML = `<span></span><span class="h">År 1–5</span><span class="h">År 6+</span>` + SC_KEYS.map((k) =>
+    `<span class="c-${k}">${SC_ICON[k]} ${Forecast.SCENARIOS[k].name}</span>
+     <input type="number" step="0.5" inputmode="decimal" name="${k}-early" value="${a[k].early}" aria-label="${k} år 1-5">
+     <input type="number" step="0.5" inputmode="decimal" name="${k}-late" value="${a[k].late}" aria-label="${k} år 6+">`).join("");
+}
+
+function renderAnalysis() {
+  const list = data.analyses || [], a = list[0];
+  if (!a) {
+    $("#analysisText").innerHTML = `<span class="muted">Den första dagliga analysen skapas vid nästa automatiska körning.</span>`;
+    $("#analysisStats").innerHTML = ""; $("#analysisDate").textContent = ""; $("#analysisHistoryWrap").hidden = true; return;
+  }
+  $("#analysisDate").textContent = `${dateSv(a.created)} · ${a.ai ? "skriven av Claude" : "automatisk"}`;
+  $("#analysisText").textContent = a.text;
+  const s = a.stats || {};
+  const cell = (l, v) => `<div>${l}<b>${v}</b></div>`;
+  $("#analysisStats").innerHTML = cell("1 vecka", pct(s.ret1w)) + cell("1 månad", pct(s.ret1m)) + cell("1 år", pct(s.ret1y)) +
+    cell("MA50", num(s.ma50, 3)) + cell("MA200", num(s.ma200, 3)) + cell("Volatilitet", s.volatility != null ? num(s.volatility, 0) + " %" : "–");
+  $("#analysisHistoryWrap").hidden = list.length < 2;
+  $("#analysisHistory").innerHTML = list.slice(1, 60).map((x) => `<li><div class="meta"><span>${x.date}</span><span>${num(x.price, 3)} kr</span><span>${kr(x.value)}</span></div>
+    <div class="small muted">Bear/Base/Bull om 5 år: ${SC_KEYS.map((k) => kr(x.scenarios?.[k]?.[2])).join(" / ")}</div>
+    <div class="entry-text small">${esc(x.text)}</div></li>`).join("");
+}
+
+function renderCalcHistory() {
+  const c = mine.calcs || [];
+  $("#calcHistory").innerHTML = c.length ? c.slice(0, 30).map((x) => `<li><div class="meta"><span>${dateSv(x.at, true)}</span><span>${num(x.price, 3)} kr × ${num(x.shares, 0)}</span></div>
+    <div class="small">Nu ${kr(x.now)} · 5 år: <span class="c-bear">${kr(x.y5.bear)}</span> / <span class="c-base">${kr(x.y5.base)}</span> / <span class="c-bull">${kr(x.y5.bull)}</span></div>
+    <div class="small muted">20 år: ${kr(x.y20.bear)} / ${kr(x.y20.base)} / ${kr(x.y20.bull)}</div></li>`).join("")
+    : `<li class="empty">Tryck på ”Räkna ut prognos nu” för att spara en uträkning.</li>`;
+}
+
+async function calculateNow() {
+  const btn = $("#calcBtn"); btn.disabled = true; btn.textContent = "Hämtar senaste kursen…";
+  await loadData();
+  btn.disabled = false; btn.textContent = "Räkna ut prognos nu";
+  const fc = forecastNow();
+  if (!fc) return toast("Ingen kurs tillgänglig");
+  const i5 = Forecast.HORIZONS.indexOf(5), pick = (i) => Object.fromEntries(SC_KEYS.map((k) => [k, fc[k][i].value]));
+  mine.calcs = [{ at: new Date().toISOString(), price: currentPrice(), shares: mine.shares, now: fc.base[0].value, y5: pick(i5), y20: pick(Forecast.HORIZONS.length - 1) }, ...(mine.calcs || [])].slice(0, 100);
+  saveMine(); renderForecast();
+  $("#calcInfo").textContent = `Uträknad ${dateSv(new Date().toISOString(), true)} med kursen ${num(currentPrice(), 3)} kr${data.quote?.time ? ` (senast handlad ${dateSv(data.quote.time, true)})` : ""}.`;
+  toast("Prognos uträknad");
+}
+
+$("#calcBtn").addEventListener("click", calculateNow);
+$("#scenSeg").addEventListener("click", (e) => { const s = e.target.closest("button")?.dataset.s; if (!s) return; mine.scenario = s; saveMine(); renderForecast(); });
+$("#assumpSave").addEventListener("click", () => {
+  const f = $("#assumpForm"), a = {};
+  for (const k of SC_KEYS) a[k] = { early: +f[`${k}-early`].value || 0, late: +f[`${k}-late`].value || 0 };
+  mine.assumptions = a; saveMine(); document.activeElement.blur(); renderForecast(); toast("Antaganden sparade");
+});
+$("#assumpReset").addEventListener("click", () => { delete mine.assumptions; saveMine(); document.activeElement.blur(); renderForecast(); toast("Återställt"); });
+
 // ---------- Händelser ----------
 document.querySelectorAll(".tabs button, [data-goto]").forEach((b) => b.addEventListener("click", () => {
   const tab = b.dataset.tab || b.dataset.goto;
   document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("active", s.id === "tab-" + tab));
   document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === tab));
   window.scrollTo(0, 0);
+  if (tab === "forecast") renderForecast();
 }));
 $("#refreshBtn").addEventListener("click", () => loadData(true));
 $("#rangeSeg").addEventListener("click", (e) => {

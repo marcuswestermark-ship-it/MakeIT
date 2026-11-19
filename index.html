@@ -47,6 +47,11 @@
       </div>
 
       <div class="card">
+        <div class="card-head"><span class="label">Prognos för ditt innehav</span><button class="link" data-goto="forecast">Detaljer →</button></div>
+        <div class="mini-forecast" id="miniForecast"></div>
+      </div>
+
+      <div class="card">
         <div class="card-head"><span class="label">Senaste nytt</span><button class="link" data-goto="news">Visa alla →</button></div>
         <ul class="list" id="latestNews"></ul>
       </div>
@@ -113,6 +118,50 @@
       </div>
     </section>
 
+    <!-- PROGNOS -->
+    <section id="tab-forecast" class="tab">
+      <button id="calcBtn" class="primary full">Räkna ut prognos nu</button>
+      <p class="small muted center" id="calcInfo">Hämtar senaste kursen och räknar om värdet på ditt innehav.</p>
+
+      <div class="seg wide scen" id="scenSeg">
+        <button data-s="bear">🐻 Bear</button><button data-s="base" class="on">⚖️ Base</button><button data-s="bull">🐂 Bull</button>
+      </div>
+
+      <div class="card scen-card" id="scenCard"></div>
+
+      <div class="card">
+        <div class="label">Alla scenarier – värde på dina aktier</div>
+        <div class="table-wrap"><table class="ftable" id="fTable"></table></div>
+      </div>
+
+      <div class="card">
+        <div class="label">Värdeutveckling 20 år (logaritmisk skala)</div>
+        <div id="fChart" class="chart tall"></div>
+        <div class="legend small"><span class="lg bear">Bear</span><span class="lg base">Base</span><span class="lg bull">Bull</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="label">Daglig analys</span><span class="small muted" id="analysisDate"></span></div>
+        <div id="analysisText" class="analysis"></div>
+        <div id="analysisStats" class="stats-grid"></div>
+        <details class="small" id="analysisHistoryWrap"><summary>Tidigare analyser</summary><ul class="list" id="analysisHistory"></ul></details>
+      </div>
+
+      <div class="card">
+        <div class="label">Dina antaganden (årlig kursutveckling, %)</div>
+        <p class="small muted">År 1–5 = utvecklings-/uppstartsfas, år 6+ = driftsfas. Ändra efter din egen bedömning.</p>
+        <form id="assumpForm" class="assump"></form>
+        <div class="btn-row"><button id="assumpSave" class="primary">Spara antaganden</button><button id="assumpReset" class="ghost">Återställ</button></div>
+      </div>
+
+      <div class="card">
+        <div class="label">Dina sparade uträkningar</div>
+        <ul class="list" id="calcHistory"></ul>
+      </div>
+
+      <p class="small muted center">Prognoserna är räkneexempel baserade på antaganden – inte förutsägelser och inte investeringsrådgivning. Ett gruvbolag i projektfas kan både mångdubblas och förlora nästan hela sitt värde.</p>
+    </section>
+
     <!-- BAKGRUND -->
     <section id="tab-about" class="tab">
       <div class="card">
@@ -141,12 +190,14 @@
 
   <nav class="tabs">
     <button data-tab="overview" class="on"><span>◉</span>Översikt</button>
+    <button data-tab="forecast"><span>↗</span>Prognos</button>
     <button data-tab="news"><span>☰</span>Nyheter</button>
     <button data-tab="mine"><span>✎</span>Mina data</button>
     <button data-tab="about"><span>ⓘ</span>Bakgrund</button>
   </nav>
 
   <div id="toast" class="toast" hidden></div>
+  <script src="forecast.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
