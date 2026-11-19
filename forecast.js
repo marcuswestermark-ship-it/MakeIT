@@ -22,10 +22,24 @@
     },
   };
 
-  function defaultAssumptions() {
+  // Standardantaganden: Grangex har egna (ovan). Andra aktier får rapportens antaganden,
+  // eller – om rapport saknas – generella antaganden som vidgas för volatila aktier.
+  function defaultAssumptions(stockId = "grangex", volatility = null) {
     const a = {};
-    for (const k in SCENARIOS) a[k] = { early: SCENARIOS[k].early, late: SCENARIOS[k].late };
-    return a;
+    if (stockId === "grangex") {
+      for (const k in SCENARIOS) a[k] = { early: SCENARIOS[k].early, late: SCENARIOS[k].late, story: SCENARIOS[k].story };
+      return a;
+    }
+    const hiVol = volatility != null && volatility > 45;
+    return hiVol ? {
+      bear: { early: -20, late: -3, story: "Bolaget missar sina mål, svagare marknad och eventuell utspädning. Aktien värderas ned kraftigt." },
+      base: { early: 9, late: 6, story: "Verksamheten utvecklas ungefär som marknaden förväntar sig, med svängningar längs vägen." },
+      bull: { early: 30, late: 10, story: "Bolaget överträffar förväntningarna och marknaden värderar upp aktien tydligt." },
+    } : {
+      bear: { early: -8, late: 0, story: "Svagare lönsamhet eller konjunktur, lägre värdering. Aktien står still eller faller." },
+      base: { early: 7, late: 6, story: "Stabil utveckling i linje med börsens historiska snitt (inkl. återinvesterad utdelning)." },
+      bull: { early: 18, late: 10, story: "Stark vinsttillväxt och högre värdering än i dag." },
+    };
   }
 
   // Faktor som kursen multipliceras med efter `years` år.

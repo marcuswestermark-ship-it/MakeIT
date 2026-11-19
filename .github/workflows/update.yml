@@ -6,8 +6,21 @@ on:
   push:
   workflow_dispatch:
     inputs:
+      action:
+        description: "Vad ska göras?"
+        type: choice
+        options: [update, add, remove, shares, report]
+        default: update
+      query:
+        description: "add: aktiens namn/ticker · remove/shares/report: aktiens id"
+        type: string
+        default: ""
+      shares:
+        description: "Antal aktier (för add/shares)"
+        type: string
+        default: ""
       force_analysis:
-        description: "Skapa en ny daglig analys direkt"
+        description: "Skapa ny daglig analys direkt"
         type: boolean
         default: false
 
@@ -30,23 +43,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
-      - name: Hämta kurs, nyheter och gör daglig analys
+      - name: Lägg till / ta bort aktie
+        id: manage
+        if: ${{ inputs.action == 'add' || inputs.action == 'remove' || inputs.action == 'shares' }}
+        run: node scripts/manage.mjs "${{ inputs.action }}" "$QUERY" "$SHARES"
+        env:
+          QUERY: ${{ inputs.query }}
+          SHARES: ${{ inputs.shares }}
+      - name: Hämta kurser, nyheter, rapporter och dagliga analyser
         run: node scripts/fetch-data.mjs
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # valfri – ger analystext skriven av Claude
-          GRANGEX_SHARES: "6850"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # valfri – ger rapporter och analyser skrivna av Claude
           FORCE_ANALYSIS: ${{ inputs.force_analysis && '1' || '0' }}
-      - name: Spara data i repot (bygger upp nyhetsarkivet)
+          FORCE_REPORT: ${{ (inputs.action == 'add' && steps.manage.outputs.id) || (inputs.action == 'report' && (inputs.query || '1')) || '' }}
+      - name: Spara data i repot
         run: |
           git config user.name "grangex-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/data.json
-          git diff --cached --quiet || (git commit -m "Uppdatera Grangex-data" && git push)
+          git add -A data
+          git diff --cached --quiet || (git commit -m "Uppdatera aktiedata" && git pull --rebase -q && git push)
       - uses: actions/configure-pages@v5
+      - name: Samla appens filer
+        run: mkdir _site && cp -r index.html app.js forecast.js style.css sw.js manifest.webmanifest icons data _site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deploy
         uses: actions/deploy-pages@v4

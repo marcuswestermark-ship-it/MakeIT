@@ -1,19 +1,32 @@
 "use strict";
 // ---------- Lagring (egen data stannar på telefonen) ----------
-const STORE_KEY = "grangex-mine-v1";
-const defaults = { shares: 6850, gav: null, manualPrice: null, entries: [] };
-function loadMine() {
-  try { return { ...defaults, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") }; } catch { return { ...defaults }; }
+const STORE_KEY = "aktier-v2", OLD_KEY = "grangex-mine-v1";
+const blankStock = (shares = 0) => ({ shares, gav: null, manualPrice: null, entries: [] });
+function loadStore() {
+  let st;
+  try { st = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch {}
+  if (!st) {
+    st = { current: "grangex", stocks: {}, github: {} };
+    try { const old = JSON.parse(localStorage.getItem(OLD_KEY) || "null"); if (old) st.stocks.grangex = { ...blankStock(6850), ...old }; } catch {}
+  }
+  st.stocks ||= {}; st.github ||= {};
+  st.stocks.grangex ||= blankStock(6850);
+  return st;
 }
-function saveMine() { try { localStorage.setItem(STORE_KEY, JSON.stringify(mine)); } catch { toast("Kunde inte spara"); } }
-let mine = loadMine();
-let data = { quote: null, news: [], errors: [] };
+const store = loadStore();
+function saveMine() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch { toast("Kunde inte spara"); } }
+let watchlist = [{ id: "grangex", name: "Grangex", permanent: true, shares: 6850 }];
+const stockEntry = (id = store.current) => watchlist.find((s) => s.id === id) || { id, name: id };
+function stockState(id) { return (store.stocks[id] ||= blankStock(stockEntry(id).shares || 0)); }
+let mine = stockState(store.current);
+let data = { quote: null, news: [], errors: [], analyses: [] };
 let chartDays = 365, newsFilter = "all";
 
 // ---------- Hjälpare ----------
 const $ = (s) => document.querySelector(s);
 const esc = (s = "") => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const kr = (v, d = 0) => v == null || isNaN(v) ? "–" : v.toLocaleString("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d }) + " kr";
+const U = () => (data.quote?.currency && data.quote.currency !== "SEK" ? data.quote.currency : "kr");
+const kr = (v, d = 0) => v == null || isNaN(v) ? "–" : v.toLocaleString("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d }) + " " + U();
 const num = (v, d = 2) => v == null || isNaN(v) ? "–" : v.toLocaleString("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d });
 const pct = (v) => v == null || isNaN(v) ? "–" : (v > 0 ? "+" : "") + v.toFixed(2).replace(".", ",") + " %";
 const dateSv = (iso, time = false) => {
@@ -34,9 +47,17 @@ const currentPrice = () => data.quote?.price ?? (mine.manualPrice || null);
 // ---------- Hämta automatisk data ----------
 async function loadData(manual) {
   $("#refreshBtn").classList.add("spin");
+  const id = store.current;
   try {
-    const res = await fetch("data/data.json?t=" + Date.now(), { cache: "no-store" });
-    data = await res.json();
+    const t = "?t=" + Date.now();
+    const [wl, d] = await Promise.all([
+      fetch("data/watchlist.json" + t, { cache: "no-store" }).then((r) => r.json()).catch(() => null),
+      fetch(`data/stocks/${id}.json` + t, { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)),
+    ]);
+    if (wl?.length) watchlist = wl;
+    if (id !== store.current) return; // användaren hann byta aktie
+    if (wl?.length && !wl.some((x) => x.id === id)) return switchStock("grangex"); // aktien är borttagen
+    data = d || { quote: null, news: [], analyses: [], errors: [id === "grangex" ? "Data saknas" : "Aktien hämtas – det tar några minuter efter att den lagts till."] };
     if (manual) toast("Uppdaterat");
   } catch {
     if (manual) toast("Offline – visar sparad data");
@@ -45,10 +66,18 @@ async function loadData(manual) {
   renderAll();
 }
 
+function switchStock(id) {
+  store.current = id; mine = stockState(id); saveMine();
+  data = { quote: null, news: [], analyses: [], errors: [] };
+  closeSheet(); resetEntryForm(); renderAll(); loadData();
+}
+
 // ---------- Rendering ----------
-function renderAll() { renderHeader(); renderOverview(); renderNews(); renderMine(); renderTimeline(); renderForecast(); }
+function renderAll() { renderHeader(); renderOverview(); renderNews(); renderMine(); renderAbout(); renderForecast(); }
 
 function renderHeader() {
+  const name = stockEntry().name || data.meta?.name || store.current;
+  $("#stockName").textContent = name; document.title = `${name} – Aktiebevakning`;
   $("#updated").textContent = data.updated ? `Data hämtad ${ago(data.updated)}` : "Väntar på första automatiska hämtningen";
 }
 
@@ -56,7 +85,7 @@ function renderOverview() {
   const q = data.quote, p = currentPrice();
   const value = p != null ? p * mine.shares : null;
   $("#holdValue").textContent = kr(value);
-  $("#holdShares").textContent = `${num(mine.shares, 0)} aktier × ${p != null ? num(p, 3) + " kr" : "–"}${!q && mine.manualPrice ? " (egen kurs)" : ""}`;
+  $("#holdShares").textContent = `${num(mine.shares, 0)} aktier × ${p != null ? num(p, 3) + " " + U() : "–"}${!q && mine.manualPrice ? " (egen kurs)" : ""}`;
   const pl = $("#holdPL");
   if (mine.gav && p != null) {
     const diff = (p - mine.gav) * mine.shares, r = (p / mine.gav - 1) * 100;
@@ -64,14 +93,14 @@ function renderOverview() {
     pl.className = diff >= 0 ? "up" : "down";
   } else { pl.textContent = mine.gav ? "" : "Ange GAV för vinst/förlust"; pl.className = "muted small"; }
 
-  $("#price").textContent = p != null ? num(p, 3) + " kr" : "–";
+  $("#price").textContent = p != null ? num(p, 3) + " " + U() : "–";
   const ch = $("#change");
   if (q?.changePct != null) {
     const dayVal = (q.price - q.prevClose) * mine.shares;
     ch.textContent = `${pct(q.changePct)} idag (${dayVal >= 0 ? "+" : ""}${kr(dayVal)})`;
     ch.className = "small " + (q.changePct >= 0 ? "up" : "down");
   } else { ch.textContent = "Ingen dagsförändring"; ch.className = "small muted"; }
-  $("#range52").textContent = q ? `${num(q.low52, 3)} – ${num(q.high52, 3)} kr` : "–";
+  $("#range52").textContent = q ? `${num(q.low52, 3)} – ${num(q.high52, 3)} ${U()}` : "–";
   $("#quoteTime").textContent = q?.time ? `Senast handlad ${dateSv(q.time, true)}` : "";
 
   renderChart();
@@ -136,7 +165,7 @@ function renderMine() {
   $("#mineList").innerHTML = list.length ? list.map((e) => `<li>
       <div><b>${esc(e.title)}</b></div>
       <div class="meta"><span>${dateSv(e.date)}</span><span class="badge">${TYPES[e.type]}</span>
-        ${e.value != null && e.value !== "" ? `<span>Värde: ${esc(e.value)}</span>` : ""}${e.tradePrice ? `<span>à ${esc(e.tradePrice)} kr</span>` : ""}</div>
+        ${e.value != null && e.value !== "" ? `<span>Värde: ${esc(e.value)}</span>` : ""}${e.tradePrice ? `<span>à ${esc(e.tradePrice)} ${U()}</span>` : ""}</div>
       ${e.text ? `<div class="entry-text">${esc(e.text)}</div>` : ""}
       ${e.url ? `<div class="small"><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.url)}</a></div>` : ""}
       <div class="entry-actions"><button class="link" data-edit="${e.id}">Redigera</button><button class="link" data-del="${e.id}">Ta bort</button></div>
@@ -167,20 +196,152 @@ const TIMELINE = [
   { when: "19 nov 2026", text: "Q3-rapport enligt bolagets kalender." },
   { when: "Mål", text: "Första kommersiella leveranser av järnmalmskoncentrat – tidigare kommunicerat Q4 2026, men tidplanen har reviderats. Följ nyheterna." },
 ];
-function renderTimeline() {
-  const own = mine.entries.filter((e) => e.type === "event").sort((a, b) => a.date.localeCompare(b.date));
-  $("#timeline").innerHTML = TIMELINE.map((t) => `<li><div class="when">${esc(t.when)}</div>${esc(t.text)}</li>`).join("") +
-    own.map((e) => `<li class="mine"><div class="when">${dateSv(e.date)} · egen</div>${esc(e.title)}</li>`).join("");
+const HEADINGS = /^(Om bolaget|Senaste utvecklingen|Ekonomi och värdering|Möjligheter|Risker|Att bevaka framåt|Kursutveckling|Nyckeltal|Senaste nyheterna)\s*:?\s*$/;
+const KI_LABELS = { priceEarningsRatio: "P/E", priceSalesRatio: "P/S", priceBookRatio: "P/B", directYield: "Direktavk. %", dividendsPerYear: "Utdelningar/år",
+  returnOnEquity: "ROE", returnOnAssets: "ROA", operatingProfitMargin: "Rörelsemarginal", netMargin: "Nettomarginal", marketCapital: "Börsvärde",
+  numberOfOwners: "Ägare (Avanza)", beta: "Beta", volatility: "Volatilitet", equityPerShare: "Eget kap./aktie", earningsPerShare: "Vinst/aktie", salesPerShare: "Försäljn./aktie" };
+
+function renderAbout() {
+  const isG = store.current === "grangex";
+  document.querySelectorAll(".only-grangex").forEach((el) => (el.hidden = !isG));
+  const r = data.report;
+  $("#reportDate").textContent = r ? `${dateSv(r.created)} · ${r.ai ? "skriven av Claude med webbsökning" : "automatisk"}` : "";
+  $("#reportText").innerHTML = r
+    ? r.text.split("\n").map((l) => HEADINGS.test(l.trim()) ? `<span class="h">${esc(l.trim().replace(/:$/, ""))}</span>` : esc(l)).join("\n")
+    : `<span class="muted">${isG ? "Rapporten skapas vid nästa automatiska körning." : "Rapporten skapas när aktien har hämtats första gången."}</span>`;
+  const ki = data.meta?.keyIndicators || {};
+  const kis = Object.entries(KI_LABELS).filter(([k]) => ki[k] != null);
+  $("#kiCard").hidden = !kis.length;
+  $("#kiGrid").innerHTML = kis.map(([k, l]) => `<div>${l}<b>${k === "marketCapital" ? num(ki[k] / 1e6, 0) + " M" : num(ki[k], k === "numberOfOwners" ? 0 : 2)}</b></div>`).join("");
+  if (isG) {
+    const own = mine.entries.filter((e) => e.type === "event").sort((a, b) => a.date.localeCompare(b.date));
+    $("#timeline").innerHTML = TIMELINE.map((t) => `<li><div class="when">${esc(t.when)}</div>${esc(t.text)}</li>`).join("") +
+      own.map((e) => `<li class="mine"><div class="when">${dateSv(e.date)} · egen</div>${esc(e.title)}</li>`).join("");
+    $("#ownEvents").hidden = true; $("#genericLinks").hidden = true;
+  } else {
+    const own = mine.entries.filter((e) => e.type === "event").sort((a, b) => a.date.localeCompare(b.date));
+    $("#ownEvents").hidden = !own.length;
+    $("#ownTimeline").innerHTML = own.map((e) => `<li class="mine"><div class="when">${dateSv(e.date)}</div>${esc(e.title)}</li>`).join("");
+    const s = stockEntry(), q = encodeURIComponent(s.name);
+    $("#genericLinks").hidden = false;
+    $("#genericLinkList").innerHTML = [
+      s.avanzaId && [`https://www.avanza.se/aktier/om-aktien.html/${s.avanzaId}`, `Avanza – ${s.name}`],
+      [`https://www.google.com/search?q=${q}+investor+relations`, "Bolagets IR-sida (sök)"],
+      [`https://mfn.se/all/s?query=${q}`, "MFN – pressmeddelanden"],
+      [`https://news.google.com/search?q=${q}&hl=sv`, "Google Nyheter"],
+    ].filter(Boolean).map(([u, t]) => `<li><a href="${u}" target="_blank" rel="noopener">${esc(t)}</a></li>`).join("");
+  }
 }
+
+// ---------- Aktiepanel & GitHub ----------
+function detectRepo() {
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/);
+  return m ? `${m[1]}/${location.pathname.split("/").filter(Boolean)[0] || ""}` : "";
+}
+const ghRepo = () => store.github.repo || detectRepo();
+function openSheet() { renderSheet(); $("#sheet").hidden = false; }
+function closeSheet() { $("#sheet").hidden = true; }
+function renderSheet() {
+  $("#stockList").innerHTML = watchlist.map((s) => `<li class="${s.id === store.current ? "cur" : ""}">
+      <button class="pick" data-pick="${esc(s.id)}">${esc(s.name)}<small>${esc([s.ticker, stockState(s.id).shares ? num(stockState(s.id).shares, 0) + " aktier" : ""].filter(Boolean).join(" · "))}</small></button>
+      ${s.permanent ? `<span class="lock">🔒 sparas alltid</span>` : `<button class="rm" data-rm="${esc(s.id)}">Ta bort</button>`}</li>`).join("");
+  const f = $("#ghForm");
+  f.token.value = store.github.token ? "••••••••" : ""; f.repo.value = ghRepo();
+  $("#ghState").textContent = store.github.token ? "ansluten" : "ej ansluten";
+  if (!store.github.token) $("#ghBox").open = true;
+}
+
+async function gh(path, opts = {}) {
+  const res = await fetch(`https://api.github.com${path}`, {
+    ...opts, headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${store.github.token}`, "X-GitHub-Api-Version": "2022-11-28", ...(opts.headers || {}) },
+  });
+  if (!res.ok) throw new Error(res.status === 401 ? "Ogiltig token" : res.status === 403 ? "Token saknar behörighet (Actions: Read and write)" : res.status === 404 ? "Hittar inte repot/arbetsflödet" : `GitHub svarade ${res.status}`);
+  return res.status === 204 ? null : res.json();
+}
+async function dispatch(inputs) {
+  if (!store.github.token) { openSheet(); throw new Error("Koppla appen till GitHub först (längst ner i panelen)"); }
+  const repo = ghRepo();
+  if (!/^[^/]+\/[^/]+$/.test(repo)) throw new Error("Ange repo som ägare/namn");
+  const { default_branch } = await gh(`/repos/${repo}`);
+  await gh(`/repos/${repo}/actions/workflows/update.yml/dispatches`, { method: "POST", body: JSON.stringify({ ref: default_branch, inputs }) });
+}
+async function pollUntil(check, status, maxMin = 8) {
+  const end = Date.now() + maxMin * 60000;
+  while (Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 20000));
+    status(`Arbetar… (${Math.round((end - Date.now()) / 60000)} min kvar som mest)`);
+    try { if (await check()) return true; } catch {}
+  }
+  return false;
+}
+const fetchWatchlist = () => fetch("data/watchlist.json?t=" + Date.now(), { cache: "no-store" }).then((r) => r.json());
+
+$("#stockBtn").addEventListener("click", openSheet);
+$("#sheet").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-close]")) return closeSheet();
+  const pick = e.target.closest("[data-pick]")?.dataset.pick;
+  if (pick) return switchStock(pick);
+  const rm = e.target.closest("[data-rm]")?.dataset.rm;
+  if (rm) {
+    const s = stockEntry(rm);
+    if (s.permanent || !confirm(`Ta bort ${s.name}? Dina egna anteckningar för aktien sparas kvar på telefonen.`)) return;
+    try {
+      await dispatch({ action: "remove", query: rm });
+      watchlist = watchlist.filter((x) => x.id !== rm);
+      if (store.current === rm) switchStock("grangex"); else renderSheet();
+      toast(`${s.name} tas bort`);
+    } catch (err) { toast(err.message); }
+  }
+});
+$("#addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target, query = f.query.value.trim(), shares = f.shares.value.trim();
+  const st = (m) => ($("#addStatus").textContent = m);
+  const before = new Set(watchlist.map((s) => s.id));
+  try {
+    st("Startar sökning på GitHub…");
+    await dispatch({ action: "add", query, shares });
+    f.reset();
+    st(`Letar upp ”${query}”, hämtar kurs och nyheter och skriver rapport och analys. Det tar ofta 2–5 minuter – du kan stänga panelen.`);
+    let added;
+    const ok = await pollUntil(async () => {
+      const wl = await fetchWatchlist();
+      added = wl.find((s) => !before.has(s.id));
+      if (!added) return false;
+      const r = await fetch(`data/stocks/${added.id}.json?t=${Date.now()}`, { cache: "no-store" });
+      if (r.ok) watchlist = wl;
+      return r.ok;
+    }, st);
+    if (ok) {
+      if (shares) stockState(added.id).shares = +shares;
+      st(`${added.name} är tillagd.`); toast(`${added.name} tillagd`); switchStock(added.id);
+    } else st("Det tog längre tid än väntat. Kolla fliken Actions på GitHub, eller öppna panelen igen om en stund.");
+  } catch (err) { st(err.message); }
+});
+$("#ghForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.token.value && !f.token.value.startsWith("•")) store.github.token = f.token.value.trim();
+  store.github.repo = f.repo.value.trim();
+  saveMine();
+  try { await gh(`/repos/${ghRepo()}`); toast("Ansluten till GitHub"); $("#ghBox").open = false; } catch (err) { toast(err.message); }
+  renderSheet();
+});
+$("#ghClear").addEventListener("click", () => { delete store.github.token; saveMine(); renderSheet(); toast("Token borttagen"); });
+$("#reportBtn").addEventListener("click", async () => {
+  if (!confirm("Skriva en ny rapport och analys för aktien? (Med Claude-nyckel kostar det några kronor.)")) return;
+  try { await dispatch({ action: "report", query: store.current }); toast("Ny rapport beställd – klar om några minuter"); } catch (err) { toast(err.message); }
+});
 
 // ---------- Prognos ----------
 const SC_KEYS = ["bear", "base", "bull"];
 const SC_ICON = { bear: "🐻", base: "⚖️", bull: "🐂" };
 const horizonLabel = (y) => (y === 0 ? "Nu" : `${y} år`);
-const assumptions = () => mine.assumptions || Forecast.defaultAssumptions();
+const assumptions = () => mine.assumptions || data.report?.assumptions || Forecast.defaultAssumptions(store.current, Forecast.stats(data.quote?.history)?.volatility);
+const storyOf = (k) => assumptions()[k]?.story || (store.current === "grangex" ? Forecast.SCENARIOS[k].story : "");
 const forecastNow = () => {
   const p = currentPrice();
-  return p == null ? null : Forecast.compute({ price: p, shares: mine.shares, assumptions: assumptions() });
+  return p == null ? null : Forecast.compute({ price: p, shares: mine.shares || 1, assumptions: assumptions() });
 };
 
 function renderForecast() {
@@ -193,11 +354,11 @@ function renderForecast() {
     card.innerHTML = msg; $("#fTable").innerHTML = ""; $("#fChart").innerHTML = ""; $("#miniForecast").innerHTML = msg;
   } else {
     const rows = fc[sel], a = assumptions()[sel], now = rows[0].value;
-    card.innerHTML = `<div class="label">${SC_ICON[sel]} ${Forecast.SCENARIOS[sel].name}-scenario · ${num(mine.shares, 0)} aktier</div>
+    card.innerHTML = `<div class="label">${SC_ICON[sel]} ${Forecast.SCENARIOS[sel].name}-scenario · ${mine.shares ? num(mine.shares, 0) + " aktier" : "per aktie (ange ditt antal under Mina data)"}</div>
       <div class="big">${kr(rows.at(-1).value)}</div><div class="small muted">om 20 år (${rows.at(-1).year}) · antagande ${pct(a.early)}/år år 1–5, ${pct(a.late)}/år därefter</div>
       <div class="scen-rows">${rows.map((r) => `<span>${horizonLabel(r.years)} <span class="muted small">${r.year}</span></span>
-        <span class="v">${kr(r.value)}</span><span class="x">${num(r.price, 2)} kr/aktie · ${r.years ? "×" + num(r.value / now, 1) : "idag"}</span>`).join("")}</div>
-      <p class="story">${esc(Forecast.SCENARIOS[sel].story)}</p>`;
+        <span class="v">${kr(r.value)}</span><span class="x">${num(r.price, 2)} ${U()}/aktie · ${r.years ? "×" + num(r.value / now, 1) : "idag"}</span>`).join("")}</div>
+      <p class="story">${esc(storyOf(sel))}</p>`;
     $("#fTable").innerHTML = `<tr><th>Tid</th>${SC_KEYS.map((k) => `<th class="c-${k} ${k === sel ? "sel" : ""}">${Forecast.SCENARIOS[k].name}</th>`).join("")}</tr>` +
       Forecast.HORIZONS.map((y, i) => `<tr><td>${horizonLabel(y)}</td>${SC_KEYS.map((k) => `<td class="${k === sel ? "sel" : ""}">${kr(fc[k][i].value)}</td>`).join("")}</tr>`).join("");
     renderForecastChart(fc);
@@ -247,14 +408,14 @@ function renderAnalysis() {
   $("#analysisStats").innerHTML = cell("1 vecka", pct(s.ret1w)) + cell("1 månad", pct(s.ret1m)) + cell("1 år", pct(s.ret1y)) +
     cell("MA50", num(s.ma50, 3)) + cell("MA200", num(s.ma200, 3)) + cell("Volatilitet", s.volatility != null ? num(s.volatility, 0) + " %" : "–");
   $("#analysisHistoryWrap").hidden = list.length < 2;
-  $("#analysisHistory").innerHTML = list.slice(1, 60).map((x) => `<li><div class="meta"><span>${x.date}</span><span>${num(x.price, 3)} kr</span><span>${kr(x.value)}</span></div>
-    <div class="small muted">Bear/Base/Bull om 5 år: ${SC_KEYS.map((k) => kr(x.scenarios?.[k]?.[2])).join(" / ")}</div>
+  $("#analysisHistory").innerHTML = list.slice(1, 60).map((x) => `<li><div class="meta"><span>${x.date}</span><span>${num(x.price, 3)} ${U()}</span><span>${kr(x.price * mine.shares)}</span></div>
+    <div class="small muted">Bear/Base/Bull om 5 år: ${SC_KEYS.map((k) => kr(x.perShare ? x.perShare[k][2] * mine.shares : x.scenarios?.[k]?.[2])).join(" / ")}</div>
     <div class="entry-text small">${esc(x.text)}</div></li>`).join("");
 }
 
 function renderCalcHistory() {
   const c = mine.calcs || [];
-  $("#calcHistory").innerHTML = c.length ? c.slice(0, 30).map((x) => `<li><div class="meta"><span>${dateSv(x.at, true)}</span><span>${num(x.price, 3)} kr × ${num(x.shares, 0)}</span></div>
+  $("#calcHistory").innerHTML = c.length ? c.slice(0, 30).map((x) => `<li><div class="meta"><span>${dateSv(x.at, true)}</span><span>${num(x.price, 3)} ${U()} × ${num(x.shares, 0)}</span></div>
     <div class="small">Nu ${kr(x.now)} · 5 år: <span class="c-bear">${kr(x.y5.bear)}</span> / <span class="c-base">${kr(x.y5.base)}</span> / <span class="c-bull">${kr(x.y5.bull)}</span></div>
     <div class="small muted">20 år: ${kr(x.y20.bear)} / ${kr(x.y20.base)} / ${kr(x.y20.bull)}</div></li>`).join("")
     : `<li class="empty">Tryck på ”Räkna ut prognos nu” för att spara en uträkning.</li>`;
@@ -269,7 +430,7 @@ async function calculateNow() {
   const i5 = Forecast.HORIZONS.indexOf(5), pick = (i) => Object.fromEntries(SC_KEYS.map((k) => [k, fc[k][i].value]));
   mine.calcs = [{ at: new Date().toISOString(), price: currentPrice(), shares: mine.shares, now: fc.base[0].value, y5: pick(i5), y20: pick(Forecast.HORIZONS.length - 1) }, ...(mine.calcs || [])].slice(0, 100);
   saveMine(); renderForecast();
-  $("#calcInfo").textContent = `Uträknad ${dateSv(new Date().toISOString(), true)} med kursen ${num(currentPrice(), 3)} kr${data.quote?.time ? ` (senast handlad ${dateSv(data.quote.time, true)})` : ""}.`;
+  $("#calcInfo").textContent = `Uträknad ${dateSv(new Date().toISOString(), true)} med kursen ${num(currentPrice(), 3)} ${U()}${data.quote?.time ? ` (senast handlad ${dateSv(data.quote.time, true)})` : ""}.`;
   toast("Prognos uträknad");
 }
 
@@ -277,7 +438,7 @@ $("#calcBtn").addEventListener("click", calculateNow);
 $("#scenSeg").addEventListener("click", (e) => { const s = e.target.closest("button")?.dataset.s; if (!s) return; mine.scenario = s; saveMine(); renderForecast(); });
 $("#assumpSave").addEventListener("click", () => {
   const f = $("#assumpForm"), a = {};
-  for (const k of SC_KEYS) a[k] = { early: +f[`${k}-early`].value || 0, late: +f[`${k}-late`].value || 0 };
+  for (const k of SC_KEYS) a[k] = { early: +f[`${k}-early`].value || 0, late: +f[`${k}-late`].value || 0, story: storyOf(k) };
   mine.assumptions = a; saveMine(); document.activeElement.blur(); renderForecast(); toast("Antaganden sparade");
 });
 $("#assumpReset").addEventListener("click", () => { delete mine.assumptions; saveMine(); document.activeElement.blur(); renderForecast(); toast("Återställt"); });

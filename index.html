@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Grangex Bevakning</title>
+  <title>Aktiebevakning</title>
   <meta name="theme-color" content="#0f141b">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
@@ -13,7 +13,7 @@
 <body>
   <header class="top">
     <div>
-      <h1>Grangex</h1>
+      <button id="stockBtn" class="stock-btn" aria-label="Byt aktie"><h1 id="stockName">Grangex</h1><span class="caret">▾</span></button>
       <p class="sub" id="updated">Laddar…</p>
     </div>
     <div class="top-actions">
@@ -159,21 +159,38 @@
         <ul class="list" id="calcHistory"></ul>
       </div>
 
-      <p class="small muted center">Prognoserna är räkneexempel baserade på antaganden – inte förutsägelser och inte investeringsrådgivning. Ett gruvbolag i projektfas kan både mångdubblas och förlora nästan hela sitt värde.</p>
+      <p class="small muted center">Prognoserna är räkneexempel baserade på antaganden – inte förutsägelser och inte investeringsrådgivning. Enskilda aktier kan både mångdubblas och förlora nästan hela sitt värde.</p>
     </section>
 
     <!-- BAKGRUND -->
     <section id="tab-about" class="tab">
       <div class="card">
+        <div class="card-head"><span class="label">Rapport</span><span class="small muted" id="reportDate"></span></div>
+        <div id="reportText" class="report"></div>
+        <button id="reportBtn" class="ghost small-btn">Skriv ny rapport</button>
+      </div>
+      <div class="card" id="kiCard" hidden>
+        <div class="label">Nyckeltal</div>
+        <div id="kiGrid" class="stats-grid"></div>
+      </div>
+      <div class="card" id="ownEvents" hidden>
+        <div class="label">Dina händelser</div>
+        <ul class="timeline" id="ownTimeline"></ul>
+      </div>
+      <div class="card" id="genericLinks" hidden>
+        <div class="label">Källor</div>
+        <ul class="list links" id="genericLinkList"></ul>
+      </div>
+      <div class="card only-grangex">
         <div class="label">Om bolaget</div>
         <p>Grangex AB är ett svenskt gruvbolag noterat på Nasdaq First North (kortnamn <b>GRANGX</b>). Huvudprojektet är att återstarta järnmalmsgruvan <b>Sydvaranger</b> vid Kirkenes i norra Norge, som ska producera högkvalitativt magnetitkoncentrat för fossilfri stålproduktion (direktreduktion). Bolaget äger även projektet <b>Dannemora</b> i Uppland.</p>
       </div>
-      <div class="card">
+      <div class="card only-grangex">
         <div class="label">Tidslinje (sammanställd nov 2026)</div>
         <ul class="timeline" id="timeline"></ul>
         <p class="small muted">Lägg till egna händelser under ”Mina data” (typ Händelse) – de visas här också.</p>
       </div>
-      <div class="card">
+      <div class="card only-grangex">
         <div class="label">Bra källor</div>
         <ul class="list links">
           <li><a href="https://www.grangex.se" target="_blank" rel="noopener">Grangex – bolagets webbplats / IR</a></li>
@@ -195,6 +212,35 @@
     <button data-tab="mine"><span>✎</span>Mina data</button>
     <button data-tab="about"><span>ⓘ</span>Bakgrund</button>
   </nav>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-bg" data-close></div>
+    <div class="sheet-panel">
+      <div class="card-head"><span class="label">Dina aktier</span><button class="link" data-close>Stäng ✕</button></div>
+      <ul class="list stock-list" id="stockList"></ul>
+
+      <div class="label sheet-sub">Lägg till aktie</div>
+      <form id="addForm" class="form">
+        <label>Bolagets namn eller ticker<input name="query" required placeholder="t.ex. Volvo B, LKAB, Boliden, NVDA"></label>
+        <label>Antal aktier du äger <span class="muted">(valfritt)</span><input name="shares" type="number" inputmode="numeric" min="0" step="1"></label>
+        <button class="primary">Lägg till och analysera</button>
+      </form>
+      <p class="small muted" id="addStatus"></p>
+
+      <details class="gh" id="ghBox">
+        <summary>Koppling till GitHub <span id="ghState" class="badge"></span></summary>
+        <p class="small muted">För att appen ska kunna lägga till och ta bort aktier behöver den en <b>fine-grained token</b> från GitHub:
+        github.com → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token.
+        Välj <i>Only select repositories</i> → repot med appen, och under Permissions: <b>Actions: Read and write</b>. Inget annat behövs.
+        Token sparas bara på den här telefonen.</p>
+        <form id="ghForm" class="form">
+          <label>Token<input name="token" type="password" autocomplete="off" placeholder="github_pat_…"></label>
+          <label>Repo <span class="muted">(ägare/namn)</span><input name="repo" placeholder="ägare/repo"></label>
+          <div class="btn-row"><button class="primary">Spara</button><button type="button" id="ghClear" class="ghost">Ta bort token</button></div>
+        </form>
+      </details>
+    </div>
+  </div>
 
   <div id="toast" class="toast" hidden></div>
   <script src="forecast.js"></script>

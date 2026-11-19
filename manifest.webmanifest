@@ -1,7 +1,7 @@
 {
-  "name": "Grangex Bevakning",
-  "short_name": "Grangex",
-  "description": "Samlar kurs, nyheter och egna anteckningar om Grangex och Sydvaranger.",
+  "name": "Aktiebevakning",
+  "short_name": "Aktier",
+  "description": "Kurs, nyheter, rapporter, analyser och prognoser för dina aktier – med Grangex alltid sparad.",
   "lang": "sv",
   "start_url": "./",
   "scope": "./",

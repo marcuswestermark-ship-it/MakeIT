@@ -1,0 +1,16 @@
+[
+  {
+    "id": "grangex",
+    "name": "Grangex",
+    "avanzaId": "118370",
+    "ticker": "GRANGX",
+    "isin": "SE0018014243",
+    "yahoo": "GRANGX.ST",
+    "newsQuery": "Grangex OR Sydvaranger",
+    "newsNo": "Grangex OR Sydvaranger",
+    "mfn": "grangex",
+    "keywords": ["grangex", "sydvaranger", "dannemora"],
+    "shares": 6850,
+    "permanent": true
+  }
+]
