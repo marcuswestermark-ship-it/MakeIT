@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Grangex Bevakning</title>
+  <meta name="theme-color" content="#0f141b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Grangex</h1>
+      <p class="sub" id="updated">Laddar…</p>
+    </div>
+    <div class="top-actions">
+      <button id="installBtn" class="chip" hidden>Installera</button>
+      <button id="refreshBtn" class="icon-btn" aria-label="Uppdatera">⟳</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ÖVERSIKT -->
+    <section id="tab-overview" class="tab active">
+      <div class="card holding">
+        <div class="label">Ditt innehav</div>
+        <div class="big" id="holdValue">–</div>
+        <div class="row-sm"><span id="holdShares">–</span><span id="holdPL"></span></div>
+      </div>
+
+      <div class="grid2">
+        <div class="card"><div class="label">Kurs</div><div class="mid" id="price">–</div><div id="change" class="small">–</div></div>
+        <div class="card"><div class="label">52 veckor</div><div class="small" id="range52">–</div><div class="small muted" id="quoteTime"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="label">Kursutveckling</span>
+          <div class="seg" id="rangeSeg">
+            <button data-r="30">1M</button><button data-r="182">6M</button><button data-r="365" class="on">1Å</button><button data-r="99999">Max</button>
+          </div>
+        </div>
+        <div id="chart" class="chart"></div>
+        <div class="small muted" id="chartInfo"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="label">Senaste nytt</span><button class="link" data-goto="news">Visa alla →</button></div>
+        <ul class="list" id="latestNews"></ul>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><span class="label">Dina senaste anteckningar</span><button class="link" data-goto="mine">Visa alla →</button></div>
+        <ul class="list" id="latestMine"></ul>
+      </div>
+
+      <div class="card warn" id="errorsCard" hidden><div class="label">Hämtningsproblem</div><ul id="errors" class="small"></ul></div>
+    </section>
+
+    <!-- NYHETER -->
+    <section id="tab-news" class="tab">
+      <input id="newsSearch" class="search" type="search" placeholder="Sök i nyheter…">
+      <div class="seg wide" id="newsFilter">
+        <button data-f="all" class="on">Alla</button><button data-f="press">Pressmedd.</button><button data-f="sv">Svenska</button><button data-f="no">Norska</button><button data-f="en">Engelska</button>
+      </div>
+      <ul class="list" id="newsList"></ul>
+    </section>
+
+    <!-- MINA DATA -->
+    <section id="tab-mine" class="tab">
+      <div class="card">
+        <div class="label">Innehav</div>
+        <form id="holdForm" class="form">
+          <label>Antal aktier<input name="shares" type="number" inputmode="numeric" min="0" step="1"></label>
+          <label>Snittpris (GAV), kr<input name="gav" type="number" inputmode="decimal" min="0" step="0.0001" placeholder="valfritt"></label>
+          <label>Egen kurs, kr <span class="muted">(används om automatisk kurs saknas)</span><input name="manualPrice" type="number" inputmode="decimal" min="0" step="0.0001" placeholder="valfritt"></label>
+          <button class="primary">Spara innehav</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="label" id="entryFormTitle">Lägg till egen data</div>
+        <form id="entryForm" class="form">
+          <input type="hidden" name="id">
+          <label>Typ
+            <select name="type">
+              <option value="note">Anteckning</option>
+              <option value="event">Händelse / milstolpe</option>
+              <option value="link">Länk / artikel</option>
+              <option value="number">Nyckeltal</option>
+              <option value="trade">Köp / sälj</option>
+            </select>
+          </label>
+          <label>Datum<input name="date" type="date" required></label>
+          <label>Rubrik<input name="title" required placeholder="t.ex. Finansiering klar, Q3-rapport…"></label>
+          <label class="f-number f-trade" hidden>Värde<input name="value" type="number" inputmode="decimal" step="any" placeholder="t.ex. 300 (MUSD) eller antal aktier"></label>
+          <label class="f-trade" hidden>Pris per aktie, kr<input name="tradePrice" type="number" inputmode="decimal" step="any"></label>
+          <label class="f-link">Länk<input name="url" type="url" placeholder="https://…"></label>
+          <label>Text<textarea name="text" rows="4" placeholder="Egna tankar, siffror, källa…"></textarea></label>
+          <div class="btn-row"><button class="primary">Spara</button><button type="button" id="cancelEdit" class="ghost" hidden>Avbryt</button></div>
+        </form>
+      </div>
+
+      <input id="mineSearch" class="search" type="search" placeholder="Sök i dina anteckningar…">
+      <ul class="list" id="mineList"></ul>
+
+      <div class="card">
+        <div class="label">Säkerhetskopia</div>
+        <p class="small muted">Din egen data sparas bara på telefonen. Exportera då och då så att inget försvinner.</p>
+        <div class="btn-row"><button id="exportBtn" class="ghost">Exportera</button><label class="ghost btn-file">Importera<input id="importFile" type="file" accept="application/json" hidden></label></div>
+      </div>
+    </section>
+
+    <!-- BAKGRUND -->
+    <section id="tab-about" class="tab">
+      <div class="card">
+        <div class="label">Om bolaget</div>
+        <p>Grangex AB är ett svenskt gruvbolag noterat på Nasdaq First North (kortnamn <b>GRANGX</b>). Huvudprojektet är att återstarta järnmalmsgruvan <b>Sydvaranger</b> vid Kirkenes i norra Norge, som ska producera högkvalitativt magnetitkoncentrat för fossilfri stålproduktion (direktreduktion). Bolaget äger även projektet <b>Dannemora</b> i Uppland.</p>
+      </div>
+      <div class="card">
+        <div class="label">Tidslinje (sammanställd nov 2026)</div>
+        <ul class="timeline" id="timeline"></ul>
+        <p class="small muted">Lägg till egna händelser under ”Mina data” (typ Händelse) – de visas här också.</p>
+      </div>
+      <div class="card">
+        <div class="label">Bra källor</div>
+        <ul class="list links">
+          <li><a href="https://www.grangex.se" target="_blank" rel="noopener">Grangex – bolagets webbplats / IR</a></li>
+          <li><a href="https://mfn.se/all/a/grangex" target="_blank" rel="noopener">MFN – alla pressmeddelanden</a></li>
+          <li><a href="https://www.inderes.se/companies/Grangex" target="_blank" rel="noopener">Inderes – analys & rapporter</a></li>
+          <li><a href="https://www.nasdaqomxnordic.com/" target="_blank" rel="noopener">Nasdaq Nordic – handelsdata</a></li>
+          <li><a href="https://www.avanza.se/sok.html?query=grangex" target="_blank" rel="noopener">Avanza – sök Grangex</a></li>
+          <li><a href="https://www.highnorthnews.com/tag/grangex" target="_blank" rel="noopener">High North News – Grangex</a></li>
+        </ul>
+      </div>
+      <p class="small muted center">Ingen investeringsrådgivning. Automatisk data kan vara fördröjd eller ofullständig.</p>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="overview" class="on"><span>◉</span>Översikt</button>
+    <button data-tab="news"><span>☰</span>Nyheter</button>
+    <button data-tab="mine"><span>✎</span>Mina data</button>
+    <button data-tab="about"><span>ⓘ</span>Bakgrund</button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
