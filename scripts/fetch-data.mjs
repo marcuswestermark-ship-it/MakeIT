@@ -73,7 +73,64 @@ async function yahooChart() {
   throw new Error(errs.join("; "));
 }
 
-async function fetchQuote() {
+const ISIN = "SE0018014243";
+
+function buildQuote(history, extra = {}) {
+  history = history.filter((p) => p[1] != null && isFinite(p[1])).sort((a, b) => a[0] - b[0]);
+  if (history.length < 2) throw new Error("för lite kurshistorik");
+  const price = extra.price ?? history.at(-1)[1];
+  const prev = extra.prevClose ?? history.at(-2)[1];
+  return {
+    ticker: TICKER, currency: "SEK", source: extra.source, price, prevClose: prev,
+    changePct: extra.changePct ?? (prev ? ((price - prev) / prev) * 100 : null),
+    high52: Math.max(...history.slice(-252).map((p) => p[1])),
+    low52: Math.min(...history.slice(-252).map((p) => p[1])),
+    time: extra.time || new Date(history.at(-1)[0]).toISOString(),
+    history,
+  };
+}
+
+// Avanza (öppna, inofficiella endpoints som används av avanza.se)
+async function avanzaQuote() {
+  const hdr = { "User-Agent": UA, Accept: "application/json", "Content-Type": "application/json" };
+  let id = process.env.AVANZA_ID;
+  if (!id) {
+    const r = await fetch("https://www.avanza.se/_api/search/filtered-search", {
+      method: "POST", headers: hdr, signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ query: "grangex", searchFilter: { types: [] }, pagination: { from: 0, size: 10 } }),
+    });
+    if (!r.ok) throw new Error(`sök ${r.status}`);
+    const j = await r.json();
+    const hit = (j.hits || []).find((h) => /stock/i.test(h.type || "") && /grangex/i.test(h.title || "")) || (j.hits || [])[0];
+    id = hit?.orderBookId || hit?.orderbookId || hit?.id;
+    if (!id) throw new Error("hittade inte Grangex i sökningen");
+  }
+  const c = await (await get(`https://www.avanza.se/_api/price-chart/stock/${id}?timePeriod=five_years&resolution=day`, "application/json")).json();
+  const history = (c.ohlc || []).map((o) => [o.timestamp, o.close, o.totalVolumeTraded ?? null]);
+  let extra = { source: `Avanza (${id})` };
+  try {
+    const m = await (await get(`https://www.avanza.se/_api/market-guide/stock/${id}`, "application/json")).json();
+    const q = m.quote || {};
+    if (q.last) extra = { ...extra, price: q.last, changePct: q.changePercent, time: q.timeOfLast ? new Date(q.timeOfLast).toISOString() : undefined };
+  } catch {}
+  return buildQuote(history, extra);
+}
+
+// Nasdaq Nordic
+async function nasdaqQuote() {
+  const hdr = "application/json";
+  const s = await (await get(`https://api.nasdaq.com/api/nordic/search?searchText=${ISIN}`, hdr)).json();
+  const flat = JSON.stringify(s);
+  const id = (flat.match(/"orderbookId":"([^"]+)"/) || [])[1];
+  if (!id) throw new Error("inget orderbookId");
+  const to = new Date().toISOString().slice(0, 10), from = new Date(Date.now() - 5 * 365 * 864e5).toISOString().slice(0, 10);
+  const c = await (await get(`https://api.nasdaq.com/api/nordic/instruments/${id}/chart?assetClass=SHARES&lang=en&fromDate=${from}&toDate=${to}`, hdr)).json();
+  const pts = c?.data?.CP || c?.data?.chartData?.CP || [];
+  const history = pts.map((p) => [p.z?.dateTime ? Date.parse(p.z.dateTime) : p.x, +(p.z?.value ?? p.y)]);
+  return buildQuote(history, { source: `Nasdaq Nordic (${id})` });
+}
+
+async function yahooQuote() {
   const j = await yahooChart();
   const r = j?.chart?.result?.[0];
   if (!r) throw new Error("Inget kursresultat");
@@ -86,7 +143,7 @@ async function fetchQuote() {
   const price = m.regularMarketPrice ?? history.at(-1)?.[1];
   const prev = history.length > 1 ? history.at(-2)[1] : m.chartPreviousClose;
   return {
-    ticker: TICKER,
+    ticker: TICKER, source: "Yahoo Finance",
     currency: m.currency || "SEK",
     price,
     prevClose: prev,
@@ -104,8 +161,12 @@ async function main() {
   const errors = [];
   const out = { updated: new Date().toISOString(), quote: prev.quote || null, news: prev.news || [], analyses: prev.analyses || [], errors };
 
-  try { out.quote = await fetchQuote(); }
-  catch (e) { errors.push(`Aktiekurs: ${e.message}`); }
+  const qErr = [];
+  for (const [name, fn] of [["Avanza", avanzaQuote], ["Nasdaq", nasdaqQuote], ["Yahoo", yahooQuote]]) {
+    try { out.quote = await fn(); console.log(`Kurs från ${name}: ${out.quote.price} (${out.quote.history.length} dagar)`); qErr.length = 0; break; }
+    catch (e) { qErr.push(`${name}: ${e.message}`); console.warn(`Kurs ${name} misslyckades: ${e.message}`); }
+  }
+  if (qErr.length) errors.push(`Aktiekurs: ${qErr.join(" | ")}`);
 
   const byId = new Map(out.news.map((n) => [n.id, n]));
   for (const feed of NEWS_FEEDS) {
