@@ -160,3 +160,4 @@ details summary { cursor: pointer; color: var(--accent); padding: 6px 0; }
 .dparams td:first-child { color: var(--muted); width: 40%; }
 .c-google { background: #8fb3ff; } .c-investor { background: #c49cff; } .c-cash { background: var(--up); } .c-reinvest { background: var(--accent); }
 .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+.div-table th, .div-table td { padding: 7px 4px; }

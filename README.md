@@ -6,7 +6,8 @@ En installerbar mobilapp (PWA) som bevakar aktier: kurs, nyheter, rapport, dagli
 ## Utdelning
 - **Grangex** (`forecast.js` → `grangexDps`): utdelningen räknas fram ur Sydvarangers kassaflöde – produktion × (pris − kassakostnad) − underhåll − skuldtjänst − fas 2-investering, efter bolagsskatt × utdelningsandel, delat med antal aktier efter finansieringen. Grundvärden från Grangex DFS (sep 2025). Alla parametrar kan ändras per scenario i appen.
 - **Andra aktier:** dagens utdelning per aktie (från Avanza) som växer 0/4/8 % per år (bear/base/bull).
-- **Fördelning (standard):** 30 % Google (Alphabet), 20 % Investor, 45 % kontant uttag, 5 % återinvesteras i aktien. Valbart i appen, liksom skatt (0 % = ISK) och förväntad avkastning.
+- **Fördelning (standard):** 30 % Google (Alphabet), 20 % Investor, 45 % kontant uttag, 5 % återinvesteras i aktien. Valbart i appen, liksom förväntad avkastning.
+- **ISK:** ingen skatt på utdelningen; schablonskatt 1,065 % per år (2026) på kontots värde (aktien + Google + Investor) över 300 000 kr, dras från kontantuttaget. Ändras i appen.
 
 ## Flera aktier
 - Listan finns i `data/watchlist.json`, data per aktie i `data/stocks/<id>.json`.

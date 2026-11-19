@@ -470,23 +470,24 @@ function renderDividend() {
   $("#divCompare").innerHTML = SC_KEYS.map((k) => `<div>${SC_ICON[k]} ${Forecast.SCENARIOS[k].name}<b class="c-${k}">${kr(at(k, 8))}/år</b><span class="small">år ${plan[k].years[7].year} · 20 år: ${kr(plan[k].totalNet)}</span></div>`).join("");
 
   if (!divYearSel || !ys.some((y) => y.year === divYearSel)) divYearSel = (ys.find((y) => y.net > 0) || ys[0]).year;
-  $("#divTable").innerHTML = `<tr><th>År</th><th>Per aktie</th><th>Du får</th><th>${esc(reinvestName())}-aktier</th></tr>` +
-    ys.map((y) => `<tr data-y="${y.year}" class="${y.net > 0 ? "" : "zero"} ${y.year === divYearSel ? "on" : ""}"><td>${y.year}</td><td>${num(y.dps, 2)}</td><td>${kr(y.net)}</td><td>${num(y.shares, 0)}</td></tr>`).join("");
+  $("#divTable").innerHTML = `<tr><th>År</th><th>Per aktie</th><th>Du får</th><th>ISK-skatt</th><th>Aktier</th></tr>` +
+    ys.map((y) => `<tr data-y="${y.year}" class="${y.net > 0 ? "" : "zero"} ${y.year === divYearSel ? "on" : ""}"><td>${y.year}</td><td>${num(y.dps, 2)}</td><td>${num(y.net, 0)}</td><td>${y.iskTax ? "−" + num(y.iskTax, 0) : "–"}</td><td>${num(y.shares, 0)}</td></tr>`).join("");
 
   const d = ys.find((y) => y.year === divYearSel);
   const parts = [["google", "Google (Alphabet)", d.toGoogle], ["investor", "Investor", d.toInvestor], ["cash", "Kontant uttag", d.toCash], ["reinvest", `Återinvestera i ${reinvestName()}`, d.toReinvest]];
   $("#divDetail").innerHTML = `<div class="label">${d.year}: ${kr(d.net)} fördelas</div>` +
     `<div class="alloc-row"><div class="bar">${parts.map(([c, , v]) => `<span class="c-${c}" style="width:${d.net ? (v / d.net) * 100 : 0}%"></span>`).join("")}</div></div>` +
     parts.map(([c, l, v]) => `<div class="alloc-row"><span><span class="dot c-${c}"></span>${l} (${a[c]} %)</span><b>${kr(v)}</b></div>`).join("") +
+    (d.iskTax ? `<div class="alloc-row"><span>ISK-schablonskatt (${a.iskRate} % på ${kr(Math.max(0, d.iskBase - a.iskFree))})</span><b class="down">−${kr(d.iskTax)}</b></div>` : "") +
     (d.bought ? `<div class="small muted">= ${num(d.bought, 1)} nya ${esc(reinvestName())}-aktier à ${num(d.price, 2)} ${U()} (scenariots kurs)</div>` : "");
 
   const L = ys.at(-1);
   $("#divEnd").innerHTML = `<div class="wide"><span class="label">Efter 20 år (${L.year})</span></div>
     <div>Google-innehav<b>${kr(L.google)}</b>${a.googleReturn} %/år</div>
     <div>Investor-innehav<b>${kr(L.investor)}</b>${a.investorReturn} %/år</div>
-    <div>Kontant uttaget<b>${kr(L.cash)}</b>${a.cashRate ? `inkl. ${a.cashRate} % ränta` : "summa"}</div>
+    <div>Kontant uttaget<b>${kr(L.cash)}</b>${a.cashRate ? `inkl. ${a.cashRate} % ränta, ` : ""}efter ISK-skatt</div>
     <div>${esc(reinvestName())}<b>${num(L.shares, 0)} aktier</b>värde ${kr(L.holding)}</div>
-    <div class="wide">Totalt<b>${kr(L.google + L.investor + L.cash + L.holding)}</b>allt ovan sammanlagt</div>`;
+    <div class="wide">Totalt<b>${kr(L.google + L.investor + L.cash + L.holding)}</b>allt ovan sammanlagt${P.iskTotal ? ` · ISK-skatt totalt ${kr(P.iskTotal)}` : ""}</div>`;
 
   const p = P.params;
   $("#divHow").textContent = isG()
@@ -498,9 +499,10 @@ function renderDividend() {
 4. Utdelning = kassaflöde × (1 − ${p.tax} % skatt) × ${p.payout} % utdelningsandel.
 5. Per aktie = utdelning × ${p.fx} kr/USD ÷ ${p.sharesM} miljoner aktier (efter nyemissionen för finansieringen; i dag ca ${num(todayShares(), 1)} miljoner).
 6. Utdelningen betalas året efter vinståret. ${a.reinvest} % köper nya aktier till scenariots kurs, så ditt antal växer.
+7. ISK: ingen skatt på utdelningen. Schablonskatt ${a.iskRate} % per år på kontots värde (Grangex + Google + Investor) över ${kr(a.iskFree)}, dras från kontantuttaget. (2026 års regler; nivån ändras med statslåneräntan.)
 
 Grundvärden från Grangex genomförbarhetsstudie (DFS, sep 2025): 2,5 Mt/år fas 1, 3–3,5 Mt/år fas 2, 70 % Fe, kassakostnad ca 56 USD/t, fas 2 ca 224 MUSD, finansieringsbehov ca 300 MUSD. Antal aktier efter finansiering och priset är de största osäkerheterna – ändra dem i inställningarna.`
-    : `Utdelning per aktie i dag: ${num(mine.currentDps ?? autoDps(), 2)} ${U()}${mine.currentDps == null ? " (från direktavkastningen hos Avanza)" : " (ditt värde)"}. Den antas växa ${p.growth} % per år i ${Forecast.SCENARIOS[sel].name}-scenariot. ${a.reinvest} % återinvesteras i aktien till scenariots kurs.`;
+    : `Utdelning per aktie i dag: ${num(mine.currentDps ?? autoDps(), 2)} ${U()}${mine.currentDps == null ? " (från direktavkastningen hos Avanza)" : " (ditt värde)"}. Den antas växa ${p.growth} % per år i ${Forecast.SCENARIOS[sel].name}-scenariot. ${a.reinvest} % återinvesteras i aktien till scenariots kurs. ISK-schablonskatt ${a.iskRate} % på kontots värde över ${kr(a.iskFree)} dras från kontantuttaget.`;
 }
 const todayShares = () => { const mc = data.meta?.keyIndicators?.marketCapital, p = currentPrice(); return mc && p ? mc / p / 1e6 : null; };
 
@@ -510,7 +512,7 @@ function renderDivSettings() {
   const row = (k, l) => `<label for="al-${k}">${l}</label><input id="al-${k}" name="${k}" type="number" step="0.5" inputmode="decimal" value="${a[k]}">`;
   f.innerHTML = row("google", "Google (Alphabet) %") + row("investor", "Investor %") + row("cash", "Kontant uttag %") + row("reinvest", `Återinvestera i ${esc(reinvestName())} %`) +
     `<span class="sum" id="allocSum"></span><span class="sep"></span>` +
-    row("tax", "Skatt på utdelning % (0 = ISK)") + row("googleReturn", "Google, förväntad avkastning %/år") + row("investorReturn", "Investor, förväntad avkastning %/år") + row("cashRate", "Ränta på kontanter %/år");
+    row("iskRate", "ISK-schablonskatt %/år (0 = av)") + row("iskFree", "ISK skattefritt belopp, kr") + row("tax", "Skatt på utdelning % (depå; 0 på ISK)") + row("googleReturn", "Google, förväntad avkastning %/år") + row("investorReturn", "Investor, förväntad avkastning %/år") + row("cashRate", "Ränta på kontanter %/år");
   updateAllocSum();
   const P = divParams();
   if (isG()) {
@@ -532,7 +534,7 @@ $("#allocForm").addEventListener("input", updateAllocSum);
 $("#divTable").addEventListener("click", (e) => { const y = e.target.closest("tr")?.dataset.y; if (y) { divYearSel = +y; renderDividend(); } });
 $("#divSave").addEventListener("click", () => {
   const f = $("#allocForm"), a = {};
-  for (const k of Object.keys(Forecast.DEFAULT_ALLOCATION)) a[k] = +f[k].value || 0;
+  for (const k of Object.keys(Forecast.DEFAULT_ALLOCATION)) a[k] = f[k] ? +f[k].value || 0 : Forecast.DEFAULT_ALLOCATION[k];
   if (a.google + a.investor + a.cash + a.reinvest !== 100) return toast("Fördelningen måste bli 100 %");
   store.allocation = a;
   const dp = {};

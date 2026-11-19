@@ -108,7 +108,9 @@
   const SIMPLE_DIVIDEND = { bear: { growth: 0 }, base: { growth: 4 }, bull: { growth: 8 } };
 
   // Standardfördelning av utdelningen (andelar i %)
-  const DEFAULT_ALLOCATION = { google: 30, investor: 20, cash: 45, reinvest: 5, tax: 0, googleReturn: 9, investorReturn: 8, cashRate: 0 };
+  // ISK: ingen skatt på utdelningen, i stället schablonskatt på kontots värde över ett skattefritt belopp.
+  // 2026: 1,065 % (30 % × (statslåneränta 2,55 % + 1 %)) på kapital över 300 000 kr.
+  const DEFAULT_ALLOCATION = { google: 30, investor: 20, cash: 45, reinvest: 5, tax: 0, googleReturn: 9, investorReturn: 8, cashRate: 0, iskRate: 1.065, iskFree: 300000 };
 
   // Utdelning per aktie (kr) som betalas ut ett visst kalenderår, Grangex-modellen.
   function grangexDps(year, p) {
@@ -132,7 +134,7 @@
     for (const k of ["bear", "base", "bull"]) {
       const sc = opts.priceAssumptions?.[k] || { early: 0, late: 0 };
       const dp = opts.divParams?.[k] || (opts.stockId === "grangex" ? GRANGEX_DIVIDEND[k] : SIMPLE_DIVIDEND[k]);
-      let shares = opts.shares, google = 0, investor = 0, cash = 0, firstYear = null, totalNet = 0;
+      let shares = opts.shares, google = 0, investor = 0, cash = 0, firstYear = null, totalNet = 0, iskTotal = 0;
       const years = [];
       for (let i = 1; i <= 20; i++) {
         const year = now + i;
@@ -146,11 +148,15 @@
         const bought = price > 0 ? (net * a.reinvest / 100) / price : 0;
         shares += bought;
         totalNet += net;
+        // ISK-schablonskatt på kontots värde (aktien + Google + Investor) över skattefritt belopp; betalas från kontantuttaget.
+        const iskBase = shares * price + google + investor;
+        const iskTax = Math.max(0, iskBase - (a.iskFree || 0)) * (a.iskRate || 0) / 100;
+        cash -= iskTax; iskTotal += iskTax;
         if (net > 0 && firstYear == null) firstYear = year;
         years.push({ i, year, dps, shares, gross, net, toGoogle: net * a.google / 100, toInvestor: net * a.investor / 100, toCash: net * a.cash / 100,
-          toReinvest: net * a.reinvest / 100, bought, price, google, investor, cash, holding: shares * price });
+          toReinvest: net * a.reinvest / 100, bought, price, google, investor, cash, holding: shares * price, iskBase, iskTax });
       }
-      out[k] = { years, firstYear, totalNet, params: dp };
+      out[k] = { years, firstYear, totalNet, iskTotal, params: dp };
     }
     return out;
   }
