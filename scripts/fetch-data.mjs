@@ -47,9 +47,34 @@ export function parseRss(xml, feed) {
   }).filter((n) => n.title && n.link);
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Yahoo svarar ibland 429 till molnservrar. Prova två värdar, sedan med cookie + "crumb", med paus mellan försöken.
+async function yahooChart() {
+  const path = `/v8/finance/chart/${TICKER}?range=5y&interval=1d&includePrePost=false`;
+  const hosts = ["https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com"];
+  const errs = [];
+  for (const h of hosts) {
+    try { return await (await get(h + path, "application/json")).json(); } catch (e) { errs.push(`${h.slice(8, 14)}: ${e.message}`); }
+    await sleep(2000);
+  }
+  try {
+    const r = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, redirect: "manual", signal: AbortSignal.timeout(15000) });
+    const cookie = (r.headers.getSetCookie?.() || []).map((c) => c.split(";")[0]).join("; ");
+    const hdr = { "User-Agent": UA, Cookie: cookie, Accept: "*/*" };
+    const crumb = await (await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", { headers: hdr, signal: AbortSignal.timeout(15000) })).text();
+    for (const h of hosts) {
+      await sleep(2000);
+      const res = await fetch(`${h}${path}&crumb=${encodeURIComponent(crumb)}`, { headers: hdr, signal: AbortSignal.timeout(20000) });
+      if (res.ok) return await res.json();
+      errs.push(`${h.slice(8, 14)}+crumb: ${res.status}`);
+    }
+  } catch (e) { errs.push(`crumb: ${e.message}`); }
+  throw new Error(errs.join("; "));
+}
+
 async function fetchQuote() {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${TICKER}?range=5y&interval=1d&includePrePost=false`;
-  const j = await (await get(url, "application/json")).json();
+  const j = await yahooChart();
   const r = j?.chart?.result?.[0];
   if (!r) throw new Error("Inget kursresultat");
   const m = r.meta;
