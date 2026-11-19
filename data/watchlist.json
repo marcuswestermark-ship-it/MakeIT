@@ -9,8 +9,26 @@
     "newsQuery": "Grangex OR Sydvaranger",
     "newsNo": "Grangex OR Sydvaranger",
     "mfn": "grangex",
-    "keywords": ["grangex", "sydvaranger", "dannemora"],
+    "keywords": [
+      "grangex",
+      "sydvaranger",
+      "dannemora"
+    ],
     "shares": 6850,
     "permanent": true
+  },
+  {
+    "id": "boliden",
+    "name": "Boliden",
+    "avanzaId": "5564",
+    "ticker": "BOL",
+    "isin": "SE0020050417",
+    "newsQuery": "\"Boliden\" OR \"BOL\"",
+    "keywords": [
+      "Boliden",
+      "BOL"
+    ],
+    "shares": 0,
+    "added": "2026-11-19T22:37:20.325Z"
   }
 ]
