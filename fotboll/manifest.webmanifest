@@ -1,0 +1,18 @@
+{
+  "name": "Fotbollsmanager",
+  "short_name": "Manager",
+  "description": "Enkelt managerspel med Premier League, La Liga, Bundesliga, Ligue 1 och Serie A.",
+  "lang": "sv",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1a12",
+  "theme_color": "#0b1a12",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

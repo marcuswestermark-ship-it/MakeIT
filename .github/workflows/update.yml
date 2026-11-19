@@ -67,7 +67,7 @@ jobs:
           WATCHLIST_CHANGED: ${{ steps.manage.outcome == 'success' && '1' || '0' }}
       - uses: actions/configure-pages@v5
       - name: Samla appens filer
-        run: mkdir _site && cp -r index.html app.js forecast.js style.css sw.js manifest.webmanifest icons data _site/
+        run: mkdir _site && cp -r index.html app.js forecast.js style.css sw.js manifest.webmanifest icons data fotboll _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
