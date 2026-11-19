@@ -63,7 +63,14 @@ jobs:
           git config user.name "grangex-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A data
-          git diff --cached --quiet || (git commit -m "Uppdatera aktiedata" && git pull --rebase -q && git push)
+          git diff --cached --quiet && exit 0
+          git commit -q -m "Uppdatera aktiedata"
+          for i in 1 2 3 4; do
+            git pull --rebase -X theirs -q && git push -q && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i * 5))
+          done
+          exit 1
       - uses: actions/configure-pages@v5
       - name: Samla appens filer
         run: mkdir _site && cp -r index.html app.js forecast.js style.css sw.js manifest.webmanifest icons data _site/
