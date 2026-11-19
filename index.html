@@ -49,6 +49,7 @@
       <div class="card">
         <div class="card-head"><span class="label">Prognos för ditt innehav</span><button class="link" data-goto="forecast">Detaljer →</button></div>
         <div class="mini-forecast" id="miniForecast"></div>
+        <div class="mini-forecast" id="miniDividend" style="margin-top:8px"></div>
       </div>
 
       <div class="card">
@@ -128,6 +129,25 @@
       </div>
 
       <div class="card scen-card" id="scenCard"></div>
+
+      <div class="card div-card" id="divCard">
+        <div class="card-head"><span class="label" id="divTitle">Utdelning</span><span class="small muted" id="divFirst"></span></div>
+        <div id="divHead"></div>
+        <div id="divCompare" class="mini-forecast"></div>
+        <div class="small muted" style="margin-top:10px">Tryck på ett år för att se hur utdelningen fördelas.</div>
+        <div class="table-wrap"><table class="ftable div-table" id="divTable"></table></div>
+        <div id="divDetail" class="div-detail"></div>
+        <div id="divEnd" class="div-end"></div>
+        <details class="small div-how"><summary>Så räknas utdelningen</summary><div id="divHow"></div></details>
+      </div>
+
+      <div class="card">
+        <div class="label">Utdelningsinställningar</div>
+        <p class="small muted">Fördelning av varje utdelning (%). Gäller alla aktier.</p>
+        <form id="allocForm" class="alloc"></form>
+        <div id="divParamsWrap"></div>
+        <div class="btn-row"><button id="divSave" class="primary">Spara</button><button id="divReset" class="ghost">Återställ</button></div>
+      </div>
 
       <div class="card">
         <div class="label">Alla scenarier – värde på dina aktier</div>

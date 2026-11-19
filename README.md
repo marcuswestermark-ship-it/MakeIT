@@ -3,6 +3,11 @@
 En installerbar mobilapp (PWA) som bevakar aktier: kurs, nyheter, rapport, daglig analys och bear/base/bull-prognoser för ditt innehav.
 **Grangex** (6 850 aktier) är alltid med och kan inte tas bort. Andra aktier läggs till och tas bort direkt i appen (tryck på aktiens namn högst upp).
 
+## Utdelning
+- **Grangex** (`forecast.js` → `grangexDps`): utdelningen räknas fram ur Sydvarangers kassaflöde – produktion × (pris − kassakostnad) − underhåll − skuldtjänst − fas 2-investering, efter bolagsskatt × utdelningsandel, delat med antal aktier efter finansieringen. Grundvärden från Grangex DFS (sep 2025). Alla parametrar kan ändras per scenario i appen.
+- **Andra aktier:** dagens utdelning per aktie (från Avanza) som växer 0/4/8 % per år (bear/base/bull).
+- **Fördelning (standard):** 30 % Google (Alphabet), 20 % Investor, 45 % kontant uttag, 5 % återinvesteras i aktien. Valbart i appen, liksom skatt (0 % = ISK) och förväntad avkastning.
+
 ## Flera aktier
 - Listan finns i `data/watchlist.json`, data per aktie i `data/stocks/<id>.json`.
 - När du lägger till en aktie i appen startar appen arbetsflödet på GitHub (`action: add`). Det söker upp aktien på Avanza, hämtar kurs, nyckeltal och nyheter, skriver en rapport med prognosantaganden och en daglig analys. Efter 2–5 minuter dyker den upp i appen.

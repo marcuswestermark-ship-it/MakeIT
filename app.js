@@ -369,7 +369,7 @@ function renderForecast() {
     const i5 = Forecast.HORIZONS.indexOf(5);
     $("#miniForecast").innerHTML = SC_KEYS.map((k) => `<div>${SC_ICON[k]} ${Forecast.SCENARIOS[k].name} · 5 år<b class="c-${k}">${kr(fc[k][i5].value)}</b></div>`).join("");
   }
-  renderAssumptions(); renderAnalysis(); renderCalcHistory();
+  renderAssumptions(); renderAnalysis(); renderCalcHistory(); renderDividend(); renderDivSettings(); renderMiniDividend();
 }
 
 function renderForecastChart(fc) {
@@ -421,9 +421,131 @@ function renderCalcHistory() {
   const c = mine.calcs || [];
   $("#calcHistory").innerHTML = c.length ? c.slice(0, 30).map((x) => `<li><div class="meta"><span>${dateSv(x.at, true)}</span><span>${num(x.price, 3)} ${U()} × ${num(x.shares, 0)}</span></div>
     <div class="small">Nu ${kr(x.now)} · 5 år: <span class="c-bear">${kr(x.y5.bear)}</span> / <span class="c-base">${kr(x.y5.base)}</span> / <span class="c-bull">${kr(x.y5.bull)}</span></div>
-    <div class="small muted">20 år: ${kr(x.y20.bear)} / ${kr(x.y20.base)} / ${kr(x.y20.bull)}</div></li>`).join("")
+    <div class="small muted">20 år: ${kr(x.y20.bear)} / ${kr(x.y20.base)} / ${kr(x.y20.bull)}</div>
+    ${x.div8 ? `<div class="small muted">Utdelning/år om 8 år: ${kr(x.div8.bear)} / ${kr(x.div8.base)} / ${kr(x.div8.bull)}</div>` : ""}</li>`).join("")
     : `<li class="empty">Tryck på ”Räkna ut prognos nu” för att spara en uträkning.</li>`;
 }
+
+// ---------- Utdelning ----------
+function renderMiniDividend() {
+  const plan = dividendPlanNow(), el = $("#miniDividend");
+  if (!plan) return (el.innerHTML = "");
+  el.innerHTML = SC_KEYS.map((k) => { const y = plan[k].years[7]; return `<div>💰 Utdelning ${y.year}<b class="c-${k}">${kr(y.net)}/år</b></div>`; }).join("");
+}
+const allocation = () => ({ ...Forecast.DEFAULT_ALLOCATION, ...(store.allocation || {}) });
+const isG = () => store.current === "grangex";
+const reinvestName = () => (isG() ? "Grangex" : stockEntry().name);
+const autoDps = () => {
+  const ki = data.meta?.keyIndicators || {}, y = ki.totalDirectYield ?? ki.directYield, p = currentPrice();
+  return y != null && p ? y * p : 0;
+};
+const divParams = () => {
+  const base = isG() ? Forecast.GRANGEX_DIVIDEND : Forecast.SIMPLE_DIVIDEND;
+  return Object.fromEntries(SC_KEYS.map((k) => [k, { ...base[k], ...(mine.divParams?.[k] || {}) }]));
+};
+let divYearSel = null;
+
+function dividendPlanNow() {
+  const p = currentPrice();
+  if (p == null) return null;
+  return Forecast.dividendPlan({
+    stockId: store.current, shares: mine.shares || 1, price: p, priceAssumptions: assumptions(),
+    divParams: divParams(), currentDps: mine.currentDps ?? autoDps(), allocation: allocation(),
+  });
+}
+
+function renderDividend() {
+  const plan = dividendPlanNow(), sel = mine.scenario || "base", a = allocation();
+  const per = mine.shares ? "" : " (per aktie)";
+  $("#divTitle").textContent = `${SC_ICON[sel]} Utdelning – ${Forecast.SCENARIOS[sel].name}${per}`;
+  if (!plan) { $("#divHead").innerHTML = `<div class="empty">Ingen kurs ännu.</div>`; return; }
+  const P = plan[sel], ys = P.years;
+  const full = ys.find((y) => y.i >= 8) || ys.at(-1);
+  $("#divFirst").textContent = P.firstYear ? `Första utdelning ${P.firstYear}` : "Ingen utdelning inom 20 år";
+  $("#divHead").innerHTML = P.firstYear
+    ? `<div class="big">${kr(full.net)}<span class="small muted"> /år</span></div>
+       <div class="small muted">din utdelning om ${full.i} år (${full.year}), ${num(full.dps, 2)} ${U()}/aktie${a.tax ? `, efter ${a.tax} % skatt` : ""} · totalt ${kr(P.totalNet)} på 20 år</div>`
+    : `<div class="empty">I det här scenariot ger aktien ingen utdelning de närmaste 20 åren${!isG() && !(mine.currentDps ?? autoDps()) ? " – bolaget delar inte ut i dag. Ange en utdelning per aktie i inställningarna om du förväntar dig en." : "."}</div>`;
+  const at = (k, i) => plan[k].years[i - 1]?.net || 0;
+  $("#divCompare").innerHTML = SC_KEYS.map((k) => `<div>${SC_ICON[k]} ${Forecast.SCENARIOS[k].name}<b class="c-${k}">${kr(at(k, 8))}/år</b><span class="small">år ${plan[k].years[7].year} · 20 år: ${kr(plan[k].totalNet)}</span></div>`).join("");
+
+  if (!divYearSel || !ys.some((y) => y.year === divYearSel)) divYearSel = (ys.find((y) => y.net > 0) || ys[0]).year;
+  $("#divTable").innerHTML = `<tr><th>År</th><th>Per aktie</th><th>Du får</th><th>${esc(reinvestName())}-aktier</th></tr>` +
+    ys.map((y) => `<tr data-y="${y.year}" class="${y.net > 0 ? "" : "zero"} ${y.year === divYearSel ? "on" : ""}"><td>${y.year}</td><td>${num(y.dps, 2)}</td><td>${kr(y.net)}</td><td>${num(y.shares, 0)}</td></tr>`).join("");
+
+  const d = ys.find((y) => y.year === divYearSel);
+  const parts = [["google", "Google (Alphabet)", d.toGoogle], ["investor", "Investor", d.toInvestor], ["cash", "Kontant uttag", d.toCash], ["reinvest", `Återinvestera i ${reinvestName()}`, d.toReinvest]];
+  $("#divDetail").innerHTML = `<div class="label">${d.year}: ${kr(d.net)} fördelas</div>` +
+    `<div class="alloc-row"><div class="bar">${parts.map(([c, , v]) => `<span class="c-${c}" style="width:${d.net ? (v / d.net) * 100 : 0}%"></span>`).join("")}</div></div>` +
+    parts.map(([c, l, v]) => `<div class="alloc-row"><span><span class="dot c-${c}"></span>${l} (${a[c]} %)</span><b>${kr(v)}</b></div>`).join("") +
+    (d.bought ? `<div class="small muted">= ${num(d.bought, 1)} nya ${esc(reinvestName())}-aktier à ${num(d.price, 2)} ${U()} (scenariots kurs)</div>` : "");
+
+  const L = ys.at(-1);
+  $("#divEnd").innerHTML = `<div class="wide"><span class="label">Efter 20 år (${L.year})</span></div>
+    <div>Google-innehav<b>${kr(L.google)}</b>${a.googleReturn} %/år</div>
+    <div>Investor-innehav<b>${kr(L.investor)}</b>${a.investorReturn} %/år</div>
+    <div>Kontant uttaget<b>${kr(L.cash)}</b>${a.cashRate ? `inkl. ${a.cashRate} % ränta` : "summa"}</div>
+    <div>${esc(reinvestName())}<b>${num(L.shares, 0)} aktier</b>värde ${kr(L.holding)}</div>
+    <div class="wide">Totalt<b>${kr(L.google + L.investor + L.cash + L.holding)}</b>allt ovan sammanlagt</div>`;
+
+  const p = P.params;
+  $("#divHow").textContent = isG()
+    ? `Grangex delar inte ut i dag och saknar utdelningspolicy, så utdelningen räknas fram ur Sydvaranger-gruvans kassaflöde:
+
+1. Produktion: ${p.mt1} Mt/år (fas 1, upprampning 60 % första året och 90 % andra), ${p.mt2} Mt/år från produktionsår 5 (fas 2). Produktionsstart ${p.startYear}.
+2. EBITDA = produktion × (pris ${p.price} − kassakostnad ${p.cost}) USD/t.
+3. Fritt kassaflöde = EBITDA − underhåll ${p.sustain} MUSD − skuldtjänst ${p.debtService} MUSD/år (i ${p.debtYears} år) − fas 2-investering ${p.phase2Capex} MUSD (år 3–4).
+4. Utdelning = kassaflöde × (1 − ${p.tax} % skatt) × ${p.payout} % utdelningsandel.
+5. Per aktie = utdelning × ${p.fx} kr/USD ÷ ${p.sharesM} miljoner aktier (efter nyemissionen för finansieringen; i dag ca ${num(todayShares(), 1)} miljoner).
+6. Utdelningen betalas året efter vinståret. ${a.reinvest} % köper nya aktier till scenariots kurs, så ditt antal växer.
+
+Grundvärden från Grangex genomförbarhetsstudie (DFS, sep 2025): 2,5 Mt/år fas 1, 3–3,5 Mt/år fas 2, 70 % Fe, kassakostnad ca 56 USD/t, fas 2 ca 224 MUSD, finansieringsbehov ca 300 MUSD. Antal aktier efter finansiering och priset är de största osäkerheterna – ändra dem i inställningarna.`
+    : `Utdelning per aktie i dag: ${num(mine.currentDps ?? autoDps(), 2)} ${U()}${mine.currentDps == null ? " (från direktavkastningen hos Avanza)" : " (ditt värde)"}. Den antas växa ${p.growth} % per år i ${Forecast.SCENARIOS[sel].name}-scenariot. ${a.reinvest} % återinvesteras i aktien till scenariots kurs.`;
+}
+const todayShares = () => { const mc = data.meta?.keyIndicators?.marketCapital, p = currentPrice(); return mc && p ? mc / p / 1e6 : null; };
+
+function renderDivSettings() {
+  const a = allocation(), f = $("#allocForm");
+  if (f.contains(document.activeElement) || $("#divParamsWrap").contains(document.activeElement)) return;
+  const row = (k, l) => `<label for="al-${k}">${l}</label><input id="al-${k}" name="${k}" type="number" step="0.5" inputmode="decimal" value="${a[k]}">`;
+  f.innerHTML = row("google", "Google (Alphabet) %") + row("investor", "Investor %") + row("cash", "Kontant uttag %") + row("reinvest", `Återinvestera i ${esc(reinvestName())} %`) +
+    `<span class="sum" id="allocSum"></span><span class="sep"></span>` +
+    row("tax", "Skatt på utdelning % (0 = ISK)") + row("googleReturn", "Google, förväntad avkastning %/år") + row("investorReturn", "Investor, förväntad avkastning %/år") + row("cashRate", "Ränta på kontanter %/år");
+  updateAllocSum();
+  const P = divParams();
+  if (isG()) {
+    $("#divParamsWrap").innerHTML = `<p class="small muted">Grangex-modellen per scenario:</p><table class="dparams"><tr><th></th>${SC_KEYS.map((k) => `<th class="c-${k}">${Forecast.SCENARIOS[k].name}</th>`).join("")}</tr>` +
+      Object.entries(Forecast.GRANGEX_PARAM_LABELS).map(([key, l]) => `<tr><td>${l}</td>${SC_KEYS.map((k) => `<td><input data-k="${k}" data-p="${key}" type="number" step="any" inputmode="decimal" value="${P[k][key]}"></td>`).join("")}</tr>`).join("") + "</table>";
+  } else {
+    $("#divParamsWrap").innerHTML = `<div class="alloc"><label>Utdelning per aktie i dag (${U()})</label><input id="curDps" type="number" step="any" inputmode="decimal" value="${num(mine.currentDps ?? autoDps(), 2).replace(/\s/g, "").replace(",", ".")}"></div>
+      <table class="dparams"><tr><th></th>${SC_KEYS.map((k) => `<th class="c-${k}">${Forecast.SCENARIOS[k].name}</th>`).join("")}</tr>
+      <tr><td>Utdelningstillväxt %/år</td>${SC_KEYS.map((k) => `<td><input data-k="${k}" data-p="growth" type="number" step="0.5" inputmode="decimal" value="${P[k].growth}"></td>`).join("")}</tr></table>`;
+  }
+}
+function updateAllocSum() {
+  const f = $("#allocForm"), sum = ["google", "investor", "cash", "reinvest"].reduce((s, k) => s + (+f[k]?.value || 0), 0);
+  const el = $("#allocSum"); if (!el) return;
+  el.textContent = `Summa: ${num(sum, 1)} %${sum === 100 ? " ✓" : " – ska vara 100 %"}`; el.className = "sum " + (sum === 100 ? "up" : "down");
+}
+
+$("#allocForm").addEventListener("input", updateAllocSum);
+$("#divTable").addEventListener("click", (e) => { const y = e.target.closest("tr")?.dataset.y; if (y) { divYearSel = +y; renderDividend(); } });
+$("#divSave").addEventListener("click", () => {
+  const f = $("#allocForm"), a = {};
+  for (const k of Object.keys(Forecast.DEFAULT_ALLOCATION)) a[k] = +f[k].value || 0;
+  if (a.google + a.investor + a.cash + a.reinvest !== 100) return toast("Fördelningen måste bli 100 %");
+  store.allocation = a;
+  const dp = {};
+  document.querySelectorAll("#divParamsWrap [data-k]").forEach((i) => { (dp[i.dataset.k] ||= {})[i.dataset.p] = +i.value; });
+  mine.divParams = dp;
+  const cd = $("#curDps"); if (cd) mine.currentDps = cd.value === "" ? null : +cd.value;
+  saveMine(); document.activeElement.blur(); renderForecast(); toast("Utdelningsinställningar sparade");
+});
+$("#divReset").addEventListener("click", () => {
+  if (!confirm("Återställa fördelning och utdelningsmodell till grundinställningarna?")) return;
+  delete store.allocation; delete mine.divParams; delete mine.currentDps;
+  saveMine(); document.activeElement.blur(); renderForecast(); toast("Återställt");
+});
 
 async function calculateNow() {
   const btn = $("#calcBtn"); btn.disabled = true; btn.textContent = "Hämtar senaste kursen…";
@@ -432,7 +554,8 @@ async function calculateNow() {
   const fc = forecastNow();
   if (!fc) return toast("Ingen kurs tillgänglig");
   const i5 = Forecast.HORIZONS.indexOf(5), pick = (i) => Object.fromEntries(SC_KEYS.map((k) => [k, fc[k][i].value]));
-  mine.calcs = [{ at: new Date().toISOString(), price: currentPrice(), shares: mine.shares, now: fc.base[0].value, y5: pick(i5), y20: pick(Forecast.HORIZONS.length - 1) }, ...(mine.calcs || [])].slice(0, 100);
+  const dp = dividendPlanNow();
+  mine.calcs = [{ at: new Date().toISOString(), price: currentPrice(), shares: mine.shares, now: fc.base[0].value, y5: pick(i5), y20: pick(Forecast.HORIZONS.length - 1), div8: dp && Object.fromEntries(SC_KEYS.map((k) => [k, dp[k].years[7].net])) }, ...(mine.calcs || [])].slice(0, 100);
   saveMine(); renderForecast();
   $("#calcInfo").textContent = `Uträknad ${dateSv(new Date().toISOString(), true)} med kursen ${num(currentPrice(), 3)} ${U()}${data.quote?.time ? ` (senast handlad ${dateSv(data.quote.time, true)})` : ""}.`;
   toast("Prognos uträknad");

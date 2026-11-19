@@ -82,7 +82,80 @@
     };
   }
 
-  const api = { HORIZONS, SCENARIOS, defaultAssumptions, factor, compute, stats };
+
+  // ================= UTDELNING =================
+  // Grangex: utdelningen räknas fram ur Sydvarangers kassaflöde (förenklad gruvmodell).
+  //   Produktion (Mt/år, upprampning 60 % år 1, 90 % år 2, fas 2 från produktionsår 5)
+  //   × (pris − kassakostnad, USD/t) = EBITDA
+  //   − underhållsinvesteringar − skuldtjänst (räntor + amortering, under X år) − fas 2-investering (år 3–4)
+  //   = fritt kassaflöde → × (1 − bolagsskatt) × utdelningsandel = total utdelning (MUSD)
+  //   Utdelning per aktie (kr) = total utdelning × USD/SEK ÷ antal aktier efter finansiering (miljoner)
+  //   Utdelningen betalas året efter vinståret.
+  // Källor för grundvärden: Grangex DFS (sep 2025): 2,5 Mt/år fas 1, 3–3,5 Mt/år fas 2, 70 % Fe,
+  // kassakostnad ca 56 USD/t, fas 1-capex 194 MUSD, fas 2-capex 224 MUSD; finansieringsbehov ca 300 MUSD (lån + nyemission).
+  const GRANGEX_DIVIDEND = {
+    bear: { startYear: 2030, mt1: 2.2, mt2: 2.2, price: 110, cost: 65, sustain: 15, debtService: 45, debtYears: 8, phase2Capex: 0,   tax: 22, payout: 30, sharesM: 180, fx: 10 },
+    base: { startYear: 2028, mt1: 2.5, mt2: 3.0, price: 125, cost: 58, sustain: 15, debtService: 45, debtYears: 7, phase2Capex: 224, tax: 22, payout: 50, sharesM: 90,  fx: 10 },
+    bull: { startYear: 2027, mt1: 2.5, mt2: 3.3, price: 140, cost: 55, sustain: 12, debtService: 40, debtYears: 6, phase2Capex: 224, tax: 22, payout: 60, sharesM: 55,  fx: 10 },
+  };
+  const GRANGEX_PARAM_LABELS = {
+    startYear: "Produktionsstart (år)", mt1: "Produktion fas 1 (Mt/år)", mt2: "Produktion fas 2 (Mt/år)", price: "Pris koncentrat (USD/t)",
+    cost: "Kassakostnad (USD/t)", sustain: "Underhållsinvest. (MUSD/år)", debtService: "Skuldtjänst (MUSD/år)", debtYears: "Skuldtjänst antal år",
+    phase2Capex: "Fas 2-investering (MUSD)", tax: "Bolagsskatt (%)", payout: "Utdelningsandel (%)", sharesM: "Aktier efter finansiering (milj.)", fx: "USD/SEK",
+  };
+
+  // Andra aktier: dagens utdelning per aktie som växer med en årlig takt per scenario.
+  const SIMPLE_DIVIDEND = { bear: { growth: 0 }, base: { growth: 4 }, bull: { growth: 8 } };
+
+  // Standardfördelning av utdelningen (andelar i %)
+  const DEFAULT_ALLOCATION = { google: 30, investor: 20, cash: 45, reinvest: 5, tax: 0, googleReturn: 9, investorReturn: 8, cashRate: 0 };
+
+  // Utdelning per aktie (kr) som betalas ut ett visst kalenderår, Grangex-modellen.
+  function grangexDps(year, p) {
+    const y = year - p.startYear; // produktionsår (1 = första) för vinståret year-1
+    if (y < 1) return 0;
+    const ramp = y === 1 ? 0.6 : y === 2 ? 0.9 : 1;
+    const q = (y >= 5 ? p.mt2 : p.mt1) * ramp;
+    const ebitda = q * (p.price - p.cost);
+    const fcf = ebitda - p.sustain - (y <= p.debtYears ? p.debtService : 0) - (y === 3 || y === 4 ? p.phase2Capex / 2 : 0);
+    if (fcf <= 0) return 0;
+    const dividendMusd = fcf * (1 - p.tax / 100) * (p.payout / 100);
+    return (dividendMusd * p.fx) / p.sharesM;
+  }
+
+  // Simulerar 20 år: utdelning, fördelning och återinvestering.
+  //   opts: { stockId, shares, price, priceAssumptions, divParams, currentDps, allocation, startYear }
+  function dividendPlan(opts) {
+    const a = { ...DEFAULT_ALLOCATION, ...(opts.allocation || {}) };
+    const now = opts.startYear || new Date().getFullYear();
+    const out = {};
+    for (const k of ["bear", "base", "bull"]) {
+      const sc = opts.priceAssumptions?.[k] || { early: 0, late: 0 };
+      const dp = opts.divParams?.[k] || (opts.stockId === "grangex" ? GRANGEX_DIVIDEND[k] : SIMPLE_DIVIDEND[k]);
+      let shares = opts.shares, google = 0, investor = 0, cash = 0, firstYear = null, totalNet = 0;
+      const years = [];
+      for (let i = 1; i <= 20; i++) {
+        const year = now + i;
+        const dps = opts.stockId === "grangex" ? grangexDps(year, dp) : (opts.currentDps || 0) * Math.pow(1 + dp.growth / 100, i - 1);
+        const gross = dps * shares;
+        const net = gross * (1 - a.tax / 100);
+        const price = opts.price * factor(i, sc);
+        google = google * (1 + a.googleReturn / 100) + net * a.google / 100;
+        investor = investor * (1 + a.investorReturn / 100) + net * a.investor / 100;
+        cash = cash * (1 + a.cashRate / 100) + net * a.cash / 100;
+        const bought = price > 0 ? (net * a.reinvest / 100) / price : 0;
+        shares += bought;
+        totalNet += net;
+        if (net > 0 && firstYear == null) firstYear = year;
+        years.push({ i, year, dps, shares, gross, net, toGoogle: net * a.google / 100, toInvestor: net * a.investor / 100, toCash: net * a.cash / 100,
+          toReinvest: net * a.reinvest / 100, bought, price, google, investor, cash, holding: shares * price });
+      }
+      out[k] = { years, firstYear, totalNet, params: dp };
+    }
+    return out;
+  }
+
+  const api = { HORIZONS, SCENARIOS, defaultAssumptions, factor, compute, stats, GRANGEX_DIVIDEND, GRANGEX_PARAM_LABELS, SIMPLE_DIVIDEND, DEFAULT_ALLOCATION, grangexDps, dividendPlan };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Forecast = api;
 })(typeof self !== "undefined" ? self : this);

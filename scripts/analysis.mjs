@@ -132,7 +132,7 @@ async function aiAnalysis(ctx) {
     betas: ["server-side-fallback-2026-07-01"], fallbacks: "default",
     system:
       "Du är en saklig aktieanalytiker som skriver en kort daglig uppdatering på svenska till en privatperson. Använd endast underlaget. " +
-      "Skriv 150–250 ord i löpande text utan rubriker: vad som hänt (kurs och nyheter), vad det betyder för bear-, base- och bull-scenariot, och vad man bör bevaka framåt. " +
+      "Skriv 150–250 ord i löpande text utan rubriker: vad som hänt (kurs och nyheter), vad det betyder för bear-, base- och bull-scenariot (både kurs och utdelning), och vad man bör bevaka framåt. " +
       "Var ärlig om osäkerheten. Ge inga köp- eller säljråd.",
     messages: [{ role: "user", content: JSON.stringify(ctx) }],
   });
@@ -149,17 +149,28 @@ export async function buildDailyAnalysis(stock, data) {
   const perShare = F.compute({ price: q.price, shares: 1, assumptions });
   const weekAgo = Date.now() - 7 * 864e5;
   const newsWeek = (data.news || []).filter((n) => n.date && Date.parse(n.date) >= weekAgo);
+  const ki = data.meta?.keyIndicators || {};
+  const div = F.dividendPlan({ stockId: stock.id, shares: shares || 1, price: q.price, priceAssumptions: assumptions,
+    currentDps: (ki.totalDirectYield ?? ki.directYield ?? 0) * q.price });
+  const divSummary = Object.fromEntries(SC.map((k) => [k, { forsta_utdelningsar: div[k].firstYear,
+    utdelning_per_ar: div[k].years.filter((y) => [1, 3, 5, 8, 12, 20].includes(y.i)).map((y) => ({ ar: y.year, per_aktie: +y.dps.toFixed(2), totalt: Math.round(y.net) })) }]));
   const ctx = {
     bolag: stock.name, datum: todaySE(), antal_aktier: shares || "okänt", kurs: q.price, valuta: q.currency, dagsforandring_pct: q.changePct,
     innehavsvarde: shares ? Math.round(value) : null, nyckeltal: s, scenarioantaganden: assumptions,
     prognos_kurs_per_aktie: Object.fromEntries(SC.map((k) => [k, perShare[k].map((r) => ({ ar: r.years, kurs: +r.price.toFixed(2) }))])),
+    utdelningsprognos: divSummary,
+    utdelningsfordelning: "30 % Google, 20 % Investor, 45 % kontant uttag, 5 % återinvesteras i aktien",
     rapport_utdrag: data.report?.text?.slice(0, 3000),
     nyheter_senaste_veckan: newsWeek.slice(0, 20).map((n) => ({ datum: n.date?.slice(0, 10), rubrik: n.title, kalla: n.source })),
   };
   let text = null;
   try { text = await aiAnalysis(ctx); } catch (e) { console.warn("  AI-analys misslyckades:", e.message); }
   const ai = !!text;
-  if (!text) text = ruleAnalysis(stock, s, q, value, newsWeek);
+  if (!text) {
+    text = ruleAnalysis(stock, s, q, value, newsWeek);
+    const y8 = (k) => div[k].years[7];
+    if (div.base.firstYear || div.bull.firstYear) text += ` Utdelningsprognos ${y8("base").year}${shares ? "" : " per aktie"}: bear ${fmt(y8("bear").net, 0)}, base ${fmt(y8("base").net, 0)}, bull ${fmt(y8("bull").net, 0)} kr/år (första utdelning i base-scenariot ${div.base.firstYear || "–"}).`;
+  }
   return {
     date: todaySE(), created: new Date().toISOString(), price: q.price, shares, value, stats: s,
     perShare: Object.fromEntries(SC.map((k) => [k, perShare[k].map((r) => +r.price.toFixed(4))])),
