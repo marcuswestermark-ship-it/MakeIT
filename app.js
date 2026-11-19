@@ -197,9 +197,13 @@ const TIMELINE = [
   { when: "Mål", text: "Första kommersiella leveranser av järnmalmskoncentrat – tidigare kommunicerat Q4 2026, men tidplanen har reviderats. Följ nyheterna." },
 ];
 const HEADINGS = /^(Om bolaget|Senaste utvecklingen|Ekonomi och värdering|Möjligheter|Risker|Att bevaka framåt|Kursutveckling|Nyckeltal|Senaste nyheterna)\s*:?\s*$/;
-const KI_LABELS = { priceEarningsRatio: "P/E", priceSalesRatio: "P/S", priceBookRatio: "P/B", directYield: "Direktavk. %", dividendsPerYear: "Utdelningar/år",
-  returnOnEquity: "ROE", returnOnAssets: "ROA", operatingProfitMargin: "Rörelsemarginal", netMargin: "Nettomarginal", marketCapital: "Börsvärde",
-  numberOfOwners: "Ägare (Avanza)", beta: "Beta", volatility: "Volatilitet", equityPerShare: "Eget kap./aktie", earningsPerShare: "Vinst/aktie", salesPerShare: "Försäljn./aktie" };
+const KI_LABELS = { marketCapital: "Börsvärde", priceEarningsRatio: "P/E", priceSalesRatio: "P/S", priceBookRatio: "P/B", evEbitRatio: "EV/EBIT",
+  earningsPerShare: "Vinst/aktie", equityPerShare: "Eget kap./aktie", totalDirectYield: "Direktavkastning", returnOnEquity: "Avk. eget kapital",
+  operatingProfitMargin: "Rörelsemarginal", netMargin: "Nettomarginal", equityRatio: "Soliditet", volatility: "Volatilitet", beta: "Beta",
+  shortSellingRatio: "Blankning", numberOfOwners: "Ägare (Avanza)" };
+const KI_PCT = new Set(["totalDirectYield", "returnOnEquity", "operatingProfitMargin", "netMargin", "equityRatio", "volatility", "shortSellingRatio"]);
+const kiFmt = (k, v) => k === "marketCapital" ? (v >= 1e9 ? num(v / 1e9, 1) + " mdr" : num(v / 1e6, 0) + " M") :
+  KI_PCT.has(k) ? num(v * 100, 1) + " %" : num(v, k === "numberOfOwners" ? 0 : 2);
 
 function renderAbout() {
   const isG = store.current === "grangex";
@@ -212,7 +216,7 @@ function renderAbout() {
   const ki = data.meta?.keyIndicators || {};
   const kis = Object.entries(KI_LABELS).filter(([k]) => ki[k] != null);
   $("#kiCard").hidden = !kis.length;
-  $("#kiGrid").innerHTML = kis.map(([k, l]) => `<div>${l}<b>${k === "marketCapital" ? num(ki[k] / 1e6, 0) + " M" : num(ki[k], k === "numberOfOwners" ? 0 : 2)}</b></div>`).join("");
+  $("#kiGrid").innerHTML = kis.map(([k, l]) => `<div>${l}<b>${kiFmt(k, ki[k])}</b></div>`).join("");
   if (isG) {
     const own = mine.entries.filter((e) => e.type === "event").sort((a, b) => a.date.localeCompare(b.date));
     $("#timeline").innerHTML = TIMELINE.map((t) => `<li><div class="when">${esc(t.when)}</div>${esc(t.text)}</li>`).join("") +

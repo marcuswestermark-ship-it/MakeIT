@@ -87,8 +87,10 @@ function ruleReport(stock, data) {
   lines.push(m.description || `${stock.name}${m.marketPlace ? `, noterat på ${m.marketPlace}` : ""}${m.sector ? `, sektor: ${m.sector}` : ""}.`);
   lines.push("", "Kursutveckling");
   lines.push(`Kurs ${fmt(data.quote?.price, 2)} ${data.quote?.currency || ""}. 1 månad ${pct(s.ret1m)}, 3 månader ${pct(s.ret3m)}, 1 år ${pct(s.ret1y)}. Årlig volatilitet ${fmt(s.volatility, 0)} %. ${pct(s.fromHigh52)} från 52-veckorshögsta.`);
-  const named = { priceEarningsRatio: "P/E", priceSalesRatio: "P/S", directYield: "Direktavkastning %", returnOnEquity: "Avkastning på eget kapital", marketCapital: "Börsvärde", numberOfOwners: "Ägare hos Avanza", beta: "Beta" };
-  const kl = Object.entries(named).filter(([k]) => ki[k] != null).map(([k, l]) => `${l}: ${fmt(ki[k], k === "marketCapital" || k === "numberOfOwners" ? 0 : 2)}`);
+  const named = { marketCapital: "Börsvärde (MSEK)", priceEarningsRatio: "P/E", priceSalesRatio: "P/S", earningsPerShare: "Vinst/aktie", totalDirectYield: "Direktavkastning", equityRatio: "Soliditet", netMargin: "Nettomarginal", numberOfOwners: "Ägare hos Avanza" };
+  const asPct = new Set(["totalDirectYield", "equityRatio", "netMargin"]);
+  const kl = Object.entries(named).filter(([k]) => ki[k] != null).map(([k, l]) =>
+    `${l}: ${k === "marketCapital" ? fmt(ki[k] / 1e6, 0) : asPct.has(k) ? fmt(ki[k] * 100, 1) + " %" : fmt(ki[k], k === "numberOfOwners" ? 0 : 2)}`);
   if (kl.length) lines.push("", "Nyckeltal", kl.join(" · "));
   const news = (data.news || []).slice(0, 8);
   if (news.length) lines.push("", "Senaste nyheterna", ...news.map((n) => `• ${n.date?.slice(0, 10) || ""} ${n.title} (${n.source})`));
