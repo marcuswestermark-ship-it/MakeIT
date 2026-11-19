@@ -32,7 +32,8 @@ if (action === "add") {
     const first = name.split(/\s+/)[0];
     list.push({
       id, name, avanzaId: hit.avanzaId, ticker: info.ticker || hit.ticker || null, isin: info.isin || null,
-      newsQuery: `"${first}"${info.ticker ? ` OR "${info.ticker}"` : ""}`, keywords: [first, ...(info.ticker ? [info.ticker] : [])],
+      // Sök nyheter på bolagsnamnet (kortnamn som "BOL" ger för många felträffar)
+      newsQuery: `"${first}"`, keywords: [first],
       shares: sharesArg ? Math.round(+sharesArg) || 0 : 0, added: new Date().toISOString(),
     });
     console.log(`Lade till ${name} (${id}, Avanza #${hit.avanzaId})`);

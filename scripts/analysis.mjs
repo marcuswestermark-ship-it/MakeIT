@@ -107,7 +107,7 @@ export async function buildReport(stock, data) {
 
 // ---------- Daglig analys ----------
 function ruleAnalysis(stock, s, q, value, newsWeek) {
-  const cur = q.currency || "SEK";
+  const cur = !q.currency || q.currency === "SEK" ? "kr" : q.currency;
   const parts = [];
   parts.push(`${stock.name} stängde på ${fmt(q.price, 2)} ${cur} (${pct(q.changePct)} senaste dagen)` +
     (stock.shares ? ` och dina ${fmt(stock.shares, 0)} aktier är värda ${fmt(value, 0)} ${cur}.` : "."));
