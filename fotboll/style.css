@@ -128,3 +128,8 @@ input.search, select.sel { width: 100%; padding: 11px 13px; border-radius: 12px;
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: #24412f; padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 30; box-shadow: 0 6px 20px rgba(0,0,0,.4); max-width: 90vw; text-align: center; }
 .news li { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; list-style: none; }
 .news { padding: 0; margin: 0; }
+
+.cupcard { border-color: #6b5a1d; background: linear-gradient(160deg, #1b2a1f, #2a2614); }
+.ht { margin-top: 10px; border-color: var(--accent); }
+.ht .plist li { padding: 7px 2px; }
+.tbl.hist td, .tbl.hist th { white-space: normal; font-size: 12px; } .tbl.hist td.t { max-width: none; }

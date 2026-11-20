@@ -13,7 +13,7 @@ let setup = { mode: "normal", league: null, team: null };
 let ui = { tableLeague: null, tableTab: "tabell", tfPos: "", tfLeague: "", tfMax: "", tfSort: "ovr", tfQuery: "", draftPos: "", slotSel: null, squadSort: "pos" };
 
 // ---------- Lagring ----------
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { toast("Kunde inte spara spelet"); } }
+function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S, (k, v) => (k[0] === "_" && k !== "_origin" ? undefined : v))); } catch (e) { toast("Kunde inte spara spelet"); } }
 function load() { try { return JSON.parse(localStorage.getItem(SAVE_KEY) || "null"); } catch { return null; } }
 function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2600); }
 
@@ -38,6 +38,7 @@ function render() {
   const app = $("#app");
   if (!S) { app.innerHTML = renderSetup(); document.body.style.paddingBottom = "20px"; return; }
   if (S.draft) { app.innerHTML = renderDraft(); document.body.style.paddingBottom = "20px"; return; }
+  if (S.fired) { app.innerHTML = renderFired(); document.body.style.paddingBottom = "20px"; return; }
   document.body.style.paddingBottom = "";
   const t = me();
   app.innerHTML = `
@@ -100,31 +101,65 @@ function renderDraft() {
 let DATA_TEAM_OF = {}; // spelare -> ursprungligt lag (för draftlistan)
 
 // ----- Hem -----
+const STAGE = { group: "Gruppspel", qf: "Kvartsfinal", sf: "Semifinal", final: "Final", done: "Avgjord" };
+const dayLabel = (day) => (day[0] === "group" ? `Europacupen · gruppspel ${day[1] + 1}/6` : `Europacupen · ${STAGE[day[0]].toLowerCase()}`);
+function nextEvent() {
+  const day = FM.cupDayPending(S);
+  if (day) { const f = FM.cupUserFixture(S, day); if (f) return { kind: "cup", day, h: f.h, a: f.a, neutral: f.neutral }; }
+  const fx = FM.userFixture(S);
+  return fx ? { kind: "league", h: fx[0], a: fx[1] } : null;
+}
+function boardCard() {
+  if (!S.board?.target) return "";
+  const b = S.board, mood = FM.boardMood(S), conf = b.confidence;
+  const cs = FM.cupStatus(S);
+  return `<div class="card"><div class="row between"><h3>Styrelsen</h3><span class="small ${mood.diff >= 0 ? "up" : "down"}">${mood.text}</span></div>
+    <div class="row between small"><span>Mål: <b>${esc(b.text)}</b> (plats ${b.target} eller bättre)</span><span>Nu: <b>${mood.pos}:a</b></span></div>
+    ${b.cupTarget ? `<div class="small muted" style="margin-top:4px">Europacupen: nå minst <b>${b.cupTarget.toLowerCase()}</b> · nu: ${cs}</div>` : cs ? `<div class="small muted" style="margin-top:4px">Europacupen: ${cs}</div>` : ""}
+    <div class="strength" style="margin-top:10px"><span class="small muted">Förtroende</span><div class="bar"><span style="width:${conf}%;background:${conf >= 60 ? "var(--green)" : conf >= 35 ? "var(--accent)" : "var(--red)"}"></span></div><b class="small">${conf}%</b></div>
+    <p class="tiny muted" style="margin:6px 0 0">Styrelsen bedömer dig när säsongen är slut. Under 25 % förtroende får du sparken.</p></div>`;
+}
 function renderHome() {
   const t = me(), L = S.leagues[t.league];
   if (FM.seasonOver(S)) {
-    const tab = FM.sortedTable(L), pos = tab.findIndex((r) => r.id === t.id) + 1;
+    const tab = FM.sortedTable(L), pos = tab.findIndex((r) => r.id === t.id) + 1, b = S.board;
+    const cw = S.cup?.winner ? T(S.cup.winner) : null;
     return `<div class="card center"><h3>Säsongen ${seasonLabel()} är slut</h3><div class="score">${pos}:a</div><p>${esc(t.name)} slutade på ${pos}:e plats med ${tab[pos - 1].pts} poäng.</p>
+      ${b?.target ? `<p class="${pos <= b.target ? "up" : "down"}">${pos <= b.target ? "✓ Styrelsens mål uppnått" : "✗ Styrelsens mål missat"} (${esc(b.text)})</p>` : ""}
+      ${cw ? `<p class="small">🏆 Europacupen: <b>${esc(cw.name)}</b>${FM.userInCup(S) ? ` · du: ${FM.cupStatus(S)}` : ""}</p>` : ""}
       <p class="small muted">Mästare: ${Object.values(S.leagues).map((l) => `${esc(l.name)}: <b>${esc(T(FM.sortedTable(l)[0].id).name)}</b>`).join(" · ")}</p>
-      <button class="btn full" data-act="next-season">Starta nästa säsong</button><p class="small muted">Spelarna blir ett år äldre, unga utvecklas, äldre tappar och vissa slutar. Nya ungdomar kommer upp.</p></div>` + renderNews();
+      <button class="btn full" data-act="next-season">Avsluta säsongen</button><p class="small muted">Styrelsen ger sitt omdöme. Spelarna blir ett år äldre, unga utvecklas, äldre tappar och vissa slutar.</p></div>` + boardCard() + renderNews();
   }
-  const fx = FM.userFixture(S), home = fx[0] === t.id, opp = T(home ? fx[1] : fx[0]);
-  const tab = FM.sortedTable(L), posOf = (id) => tab.findIndex((r) => r.id === id) + 1;
+  const ev = nextEvent();
+  if (!ev) {
+    return `<div class="card center"><h3>Din liga är färdigspelad</h3><p class="small muted">Övriga ligor och Europacupen spelar klart.</p><button class="btn full" data-act="quick">⏩ Spela vidare</button></div>` + boardCard() + renderLastRound();
+  }
+  const home = ev.h === t.id, opp = T(home ? ev.a : ev.h);
+  const tab = FM.sortedTable(L), posOf = (id) => { const i = tab.findIndex((r) => r.id === id); return i >= 0 ? `${i + 1}:a` : esc(S.leagues[T(id).league].name); };
   const okLine = FM.validLineup(S, t);
   const st = FM.strength(S, t), so = FM.strength(S, opp);
-  return `<div class="card next"><h3>Nästa match · omgång ${S.round + 1}</h3>
-      <div class="vs"><div class="side">${crest(home ? t : opp)}<span>${esc((home ? t : opp).name)}</span><span class="small muted">${posOf(home ? t.id : opp.id)}:a</span></div>
+  const title = ev.kind === "cup" ? `🏆 ${dayLabel(ev.day)}` : `Nästa match · omgång ${S.round + 1}`;
+  return `<div class="card next ${ev.kind === "cup" ? "cupcard" : ""}"><h3>${title}</h3>
+      <div class="vs"><div class="side">${crest(T(ev.h))}<span>${esc(T(ev.h).name)}</span><span class="small muted">${posOf(ev.h)}</span></div>
       <div class="muted">vs</div>
-      <div class="side">${crest(home ? opp : t)}<span>${esc((home ? opp : t).name)}</span><span class="small muted">${posOf(home ? opp.id : t.id)}:a</span></div></div>
-      <div class="small muted">${home ? "Hemma" : "Borta"} · ${t.tactic.formation} · ${FM.MENTALITY[t.tactic.mentality]} · press ${FM.PRESS[t.tactic.press].toLowerCase()}</div>
+      <div class="side">${crest(T(ev.a))}<span>${esc(T(ev.a).name)}</span><span class="small muted">${posOf(ev.a)}</span></div></div>
+      <div class="small muted">${ev.neutral ? "Neutral plan" : home ? "Hemma" : "Borta"} · ${t.tactic.formation} · ${FM.MENTALITY[t.tactic.mentality]} · press ${FM.PRESS[t.tactic.press].toLowerCase()}</div>
       <div class="strength" style="margin:12px 0">${[["Anfall", "att"], ["Mittfält", "mid"], ["Försvar", "def"]].map(([l, k]) =>
         `<span class="small muted">${l}</span><div class="bar"><span style="width:${Math.min(100, st[k] / 20 * 100)}%;background:${st[k] >= so[k] ? "var(--green)" : "var(--red)"}"></span></div><span class="small">${st[k].toFixed(1)} <span class="muted">/ ${so[k].toFixed(1)}</span></span>`).join("")}</div>
       ${okLine ? "" : `<p class="small down">Din startelva är inte komplett – den bästa elvan väljs automatiskt.</p>`}
       <div class="btn-row"><button class="btn" data-act="play">▶ Spela</button><button class="btn ghost" data-act="quick">⏩ Snabbspela</button></div>
       <div style="height:8px"></div><button class="btn ghost full small" data-act="quick5">Snabbspela 5 omgångar</button></div>
     ${renderLastRound()}
+    ${boardCard()}
     <div class="card"><div class="row between"><h3>Tabelltopp</h3><button class="chip" data-view="table">Hela tabellen</button></div>${miniTable(L)}</div>
     ${renderNews()}`;
+}
+function renderFired() {
+  const h = S.history[0], old = T(h.team), offers = S.jobOffers || (S.jobOffers = FM.jobOffers(S));
+  return `<div class="wrap"><div class="hero"><div class="ball">📉</div><h1>Du har fått sparken</h1>
+    <p class="muted">Styrelsen i ${esc(old.name)} har tappat förtroendet (${h.board.confidence}%) efter plats ${h.user.pos} – målet var ${esc(h.board.text.toLowerCase())}.</p></div>
+    <h3>Klubbar som vill anställa dig</h3>${offers.map((id) => { const t = T(id); return `<button class="pickcard" data-job="${id}" style="display:flex;align-items:center;gap:12px">${crest(t)}<div style="flex:1"><b>${esc(t.name)}</b><div class="small muted">${esc(S.leagues[t.league].name)} · <span class="stars">${stars(t.rep)}</span></div></div></button>`; }).join("")}
+    <div style="height:10px"></div><button class="btn ghost full" data-act="reset">Avsluta karriären och börja om</button></div>`;
 }
 function miniTable(L) {
   const tab = FM.sortedTable(L), i = tab.findIndex((r) => r.id === S.userTeam);
@@ -196,9 +231,37 @@ function openSlot(i) {
 }
 
 // ----- Tabell -----
+function cupRes(r) { return `<li class="${r.h === S.userTeam || r.a === S.userTeam ? "me" : ""}"><span class="h">${esc(T(r.h).name)}</span><b>${r.hg != null ? `${r.hg}–${r.ag}${r.pens ? "*" : ""}` : "–"}</b><span>${esc(T(r.a).name)}</span></li>`; }
+function renderCup() {
+  const c = S.cup;
+  if (!c) return `<div class="card muted">Ingen Europacup den här säsongen – den startar nästa säsong. De tre bästa lagen i varje liga och den bästa fyran kvalificerar sig.</div>`;
+  const ko = [["final", "Final"], ["sf", "Semifinaler"], ["qf", "Kvartsfinaler"]].filter(([k]) => c[k].length).map(([k, l]) => {
+    const res = c.koResults[k];
+    const rows = c[k].map(([h, a], i) => res[i] ? cupRes(res[i]) : cupRes({ h, a })).join("");
+    return `<div class="card"><h3>${l}</h3><ul class="results news">${rows}</ul></div>`;
+  }).join("");
+  const groups = c.groups.map((g, gi) => `<div class="card"><h3>Grupp ${"ABCD"[gi]}</h3><table class="tbl"><tr><th class="t">Lag</th><th>M</th><th>+/-</th><th>P</th></tr>${FM.cupGroupTable(S, g).map((r, i) =>
+    `<tr class="${r.id === S.userTeam ? "me" : ""} ${i < 2 ? "zone-cl" : ""}"><td class="t">${esc(T(r.id).name)} <span class="tiny muted">${esc(S.leagues[T(r.id).league].name)}</span></td><td>${r.p}</td><td>${r.gd}</td><td><b>${r.pts}</b></td></tr>`).join("")}</table></div>`).join("");
+  const win = c.winner ? `<div class="card center"><div style="font-size:40px">🏆</div><b style="font-size:18px">${esc(T(c.winner).name)}</b><div class="small muted">Vinnare ${S.season}/${String(S.season + 1).slice(2)}</div></div>` : "";
+  return `${win}<p class="small muted">${STAGE[c.stage]} · ${FM.userInCup(S) ? `Du: <b>${FM.cupStatus(S)}</b>` : "Ditt lag är inte med i år"} · * = avgjort på straffar · två bästa i varje grupp går vidare</p>${ko}${groups}`;
+}
+function renderHistory() {
+  const h = S.history || [];
+  if (!h.length) return `<div class="card muted">Historiken fylls på när den första säsongen är slut.</div>`;
+  return h.map((x) => {
+    const ut = T(x.team) || me(), b = x.board;
+    return `<div class="card"><div class="row between"><h3>${x.season}/${String(x.season + 1).slice(2)}</h3>${x.fired ? `<span class="small down">Sparken</span>` : ""}</div>
+      <div class="row">${crest(ut)}<div><b>${esc(ut.name)} – ${x.user?.pos}:a</b><div class="small muted">${x.user?.pts} poäng · ${x.user?.gf}–${x.user?.ga}${x.userTopScorer ? ` · bäste målskytt ${esc(x.userTopScorer.name)} (${x.userTopScorer.goals})` : ""}</div></div></div>
+      ${b ? `<div class="small" style="margin-top:6px">Mål: ${esc(b.text)} – <span class="${b.met ? "up" : "down"}">${b.met ? "uppnått" : "missat"}</span> · förtroende ${b.confidence}% (${b.delta >= 0 ? "+" : ""}${b.delta})${b.bonus ? ` · bonus ${FM.money(b.bonus)}` : ""}</div>` : ""}
+      ${x.cup?.winner ? `<div class="small" style="margin-top:4px">🏆 Europacupen: <b>${esc(T(x.cup.winner).name)}</b>${x.cup.user ? ` · du: ${x.cup.user}` : ""}</div>` : ""}
+      <table class="tbl hist" style="margin-top:8px"><tr><th class="t">Liga</th><th class="t">Mästare</th><th class="t">Skyttekung</th></tr>${Object.entries(x.champions).map(([lid, tid]) => {
+        const ts = x.topScorers?.[lid];
+        return `<tr><td class="t">${esc(S.leagues[lid].name)}</td><td class="t">${esc(T(tid).name)}</td><td class="t">${ts ? `${esc(ts.name)} (${ts.goals})` : ""}</td></tr>`; }).join("")}</table></div>`;
+  }).join("");
+}
 function renderTable() {
   const lid = ui.tableLeague || me().league, L = S.leagues[lid];
-  const tabs = `<div class="seg">${[["tabell", "Tabell"], ["skytte", "Skytteliga"], ["resultat", "Resultat"]].map(([k, l]) => `<button data-ttab="${k}" class="${ui.tableTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  const tabs = `<div class="seg">${[["tabell", "Tabell"], ["skytte", "Skyttar"], ["resultat", "Resultat"], ["europa", "Europa"], ["historik", "Historik"]].map(([k, l]) => `<button data-ttab="${k}" class="${ui.tableTab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
   const leagues = `<select class="sel" id="tableLeague">${Object.values(S.leagues).map((l) => `<option value="${l.id}" ${l.id === lid ? "selected" : ""}>${esc(l.name)}</option>`).join("")}</select>`;
   let body = "";
   if (ui.tableTab === "tabell") {
@@ -210,6 +273,10 @@ function renderTable() {
     const ps = Object.values(S.players).filter((p) => p.team && T(p.team).league === lid && p.goals > 0).sort((a, b) => b.goals - a.goals || b.assists - a.assists).slice(0, 25);
     body = `<table class="tbl"><tr><th>#</th><th class="t">Spelare</th><th class="t">Lag</th><th>Mål</th><th>Ass</th></tr>${ps.map((p, i) =>
       `<tr class="${p.team === S.userTeam ? "me" : ""}"><td class="n">${i + 1}</td><td class="t">${esc(p.name)}</td><td class="t">${esc(T(p.team).short)}</td><td><b>${p.goals}</b></td><td>${p.assists}</td></tr>`).join("")}</table>${ps.length ? "" : `<p class="muted">Inga mål ännu.</p>`}`;
+  } else if (ui.tableTab === "europa") {
+    return `<h2>🏆 Europacupen</h2>${tabs}<div style="margin-top:10px">${renderCup()}</div>`;
+  } else if (ui.tableTab === "historik") {
+    return `<h2>Historik</h2>${tabs}<div style="margin-top:10px">${renderHistory()}</div>`;
   } else {
     const rounds = L.results.map((r, i) => [r, i]).filter(([r]) => r.length).reverse().slice(0, 6);
     const nextR = L.fixtures[S.round];
@@ -262,46 +329,95 @@ function showOffers(id) {
 }
 
 // ----- Match -----
+function playCupWithoutMe() { while (FM.cupDayPending(S) && !FM.cupUserFixture(S)) FM.playNext(S); }
 function playMatch(live) {
-  const t = me(); FM.ensureLineup(S, t);
-  const res = FM.playRound(S);
-  if (!res) { save(); render(); return; }
-  S.lastMatch = res; save();
-  if (!live) { showMatchResult(res, false); return; }
-  showMatchResult(res, true);
+  FM.ensureLineup(S, me());
+  playCupWithoutMe();
+  if (FM.seasonOver(S)) { save(); return render(); }
+  const r = FM.playNext(S, { live });
+  if (!r.match) { playCupWithoutMe(); save(); toast("Omgången spelad"); return render(); }
+  if (!r.pending) { S.lastMatch = r.match; S.lastKind = r.kind; playCupWithoutMe(); save(); showMatchResult(r, false); return; }
+  showMatchResult(r, true);
 }
-function showMatchResult(m, live) {
-  const h = T(m.home), a = T(m.away), L = S.leagues[me().league], roundRes = L.results[S.round - 1] || [];
-  openSheet(`<div class="center"><div class="clock" id="mClock">${live ? "0'" : "Slut"}</div>
-    <div class="vs"><div class="side">${crest(h)}<span class="small">${esc(h.name)}</span></div><div class="score" id="mScore">${live ? "0–0" : `${m.hg}–${m.ag}`}</div><div class="side">${crest(a)}<span class="small">${esc(a.name)}</span></div></div></div>
+function roundResultsFor(r) {
+  if (r.kind === "cup") {
+    const c = S.cup, d = r.day;
+    return d[0] === "group" ? c.mdResults[d[1]] : c.koResults[d[0]];
+  }
+  return S.leagues[me().league].results[S.round - 1] || [];
+}
+function showMatchResult(r, live) {
+  const m = r.match, h = T(m.home), a = T(m.away);
+  const head = r.kind === "cup" ? dayLabel(r.day) : `Omgång ${S.round + (live ? 1 : 0)}`;
+  openSheet(`<div class="center"><div class="small muted">${head}</div><div class="clock" id="mClock">${live ? "0'" : "Slut"}</div>
+    <div class="vs"><div class="side">${crest(h)}<span class="small">${esc(h.name)}</span></div><div class="score" id="mScore">${live ? "0–0" : esc(scoreTxt(m))}</div><div class="side">${crest(a)}<span class="small">${esc(a.name)}</span></div></div></div>
     <div class="seg" ${live ? "" : "hidden"} id="mSpeed"><button data-speed="1" class="on">Normal</button><button data-speed="3">Snabb</button><button data-speed="99">Direkt</button></div>
+    <div id="mHT"></div>
     <ul class="events" id="mEvents">${live ? "" : eventsHtml(m, m.events)}</ul>
-    <div id="mAfter" ${live ? "hidden" : ""}>${afterHtml(m, roundRes)}</div>`, { locked: live });
+    <div id="mAfter" ${live ? "hidden" : ""}>${live ? "" : afterHtml(m, roundResultsFor(r))}</div>`, { locked: live });
   if (!live) return;
-  let min = 0, speed = 1, shown = 0;
-  const step = () => {
-    min += 1;
+  S._locked = true;
+  let min = 0, speed = 1, shown = -1;
+  const draw = () => {
     const ev = m.events.filter((e) => e.min <= min);
-    if (ev.length > shown) {
+    if (ev.length !== shown) {
       shown = ev.length;
-      const hg = ev.filter((e) => e.side === "h").length, ag = ev.length - hg;
-      $("#mScore").textContent = `${hg}–${ag}`;
+      const hg = ev.filter((e) => e.side === "h").length;
+      $("#mScore").textContent = `${hg}–${ev.length - hg}`;
       $("#mEvents").innerHTML = eventsHtml(m, ev);
     }
-    $("#mClock").textContent = min === 45 ? "Halvtid" : `${min}'`;
-    if (min >= 90) { $("#mClock").textContent = "Slut"; $("#mSpeed").hidden = true; $("#mAfter").hidden = false; S._locked = false; return; }
-    setTimeout(step, speed >= 99 ? 0 : (min === 45 ? 700 : 60) / speed);
+  };
+  const step = () => {
+    min++;
+    draw();
+    $("#mClock").textContent = `${min}'`;
+    if (min === 45) { $("#mClock").textContent = "Halvtid"; $("#mSpeed").hidden = true; return halftime(); }
+    if (min >= 90) {
+      $("#mClock").textContent = "Slut"; $("#mScore").textContent = scoreTxt(m); $("#mSpeed").hidden = true;
+      $("#mAfter").innerHTML = afterHtml(m, roundResultsFor(r)); $("#mAfter").hidden = false; S._locked = false; return;
+    }
+    setTimeout(step, speed >= 99 ? 0 : 70 / speed);
+  };
+  const halftime = () => {
+    S._ht = { r, subs: 0, pick: null };
+    renderHT();
+  };
+  S._resume = () => {
+    $("#mHT").innerHTML = ""; $("#mSpeed").hidden = false;
+    FM.finishPending(S);
+    S.lastMatch = m; S.lastKind = r.kind; playCupWithoutMe(); save();
+    delete S._ht;
+    setTimeout(step, 200);
   };
   $("#mSpeed").onclick = (e) => { const v = e.target.dataset.speed; if (!v) return; speed = +v; $("#mSpeed").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b === e.target)); };
-  S._locked = true; setTimeout(step, 300);
+  setTimeout(step, 300);
+}
+const scoreTxt = (m) => `${m.hg}–${m.ag}${m.pens ? " (str.)" : ""}`;
+function renderHT() {
+  const t = me(), ht = S._ht, m = ht.r.match, sl = FM.slots(t.tactic.formation);
+  const subsUsed = t.lineup.filter((id) => !m.htLine.includes(id)).length;
+  if (ht.pick != null) {
+    const pos = sl[ht.pick], out = P(t.lineup[ht.pick]);
+    const bench = t.players.filter((id) => !t.lineup.includes(id)).map(P).sort((a, b) => FM.ovr(b, pos) - FM.ovr(a, pos));
+    $("#mHT").innerHTML = `<div class="card ht"><div class="row between"><h3>Byt ut ${esc(out.name)}</h3><button class="chip" data-htback>Tillbaka</button></div>
+      <ul class="plist">${bench.map((p) => `<li data-htin="${p.id}"><span class="pos ${p.pos}">${p.pos}</span>${ovrBadge(p, pos)}<div class="nm"><b>${esc(p.name)}</b><span>${p.pos !== pos ? "fel position" : FM.POS_LABEL[p.pos]}</span></div></li>`).join("") || `<li class="muted">Inga avbytare</li>`}</ul></div>`;
+    return;
+  }
+  $("#mHT").innerHTML = `<div class="card ht"><h3>Halvtid – ändra laget</h3>
+    <div class="small muted">Mentalitet</div><div class="seg">${Object.entries(FM.MENTALITY).map(([k, l]) => `<button data-htment="${k}" class="${t.tactic.mentality === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="small muted" style="margin-top:8px">Press</div><div class="seg">${Object.entries(FM.PRESS).map(([k, l]) => `<button data-htpress="${k}" class="${t.tactic.press === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="row between" style="margin-top:10px"><span class="small muted">Startelva – tryck för att byta</span><span class="small">Byten: <b>${subsUsed}/3</b></span></div>
+    <ul class="plist">${t.lineup.map((id, i) => { const p = P(id); return `<li data-htsub="${i}"><span class="pos ${sl[i]}">${sl[i]}</span>${ovrBadge(p, sl[i])}<div class="nm"><b>${esc(p.name)}</b><span>${m.htLine.includes(id) ? "" : "inbytt"}</span></div><span class="chip">Byt</span></li>`; }).join("")}</ul>
+    <button class="btn full" data-act="ht-go" style="margin-top:10px">▶ Andra halvlek</button></div>`;
 }
 function eventsHtml(m, evs) {
   return [...evs].reverse().map((e) => `<li class="${e.side}"><span class="m">${e.min}'</span><span>⚽ <b>${esc(P(e.scorer)?.name || "")}</b>${e.assist ? `<br><span class="small muted">ass. ${esc(P(e.assist)?.name || "")}</span>` : ""}</span></li>`).join("") || `<li class="muted">Inga mål ännu</li>`;
 }
 function afterHtml(m, roundRes) {
   const stat = (l, x, y, fmt = (v) => v) => `<div class="statrow"><span class="l">${fmt(x)}</span><div class="c">${l}</div><span>${fmt(y)}</span></div>`;
-  return `<div class="card" style="margin-top:12px">${stat("Bollinnehav", m.possH, 100 - m.possH, (v) => v + "%")}${stat("Skott", m.shotsH, m.shotsA)}${stat("xG", m.xgH, m.xgA, (v) => Number(v).toFixed(1))}</div>
-    <h3>Övriga resultat</h3><ul class="results news">${roundRes.map((r) => `<li class="${r.h === S.userTeam || r.a === S.userTeam ? "me" : ""}"><span class="h">${esc(T(r.h).name)}</span><b>${r.hg}–${r.ag}</b><span>${esc(T(r.a).name)}</span></li>`).join("")}</ul>
+  const pens = m.pens ? `<p class="center gold">${esc(T(FM.winnerOf(m)).name)} vinner på straffar!</p>` : "";
+  return `${pens}<div class="card" style="margin-top:12px">${stat("Bollinnehav", m.possH, 100 - m.possH, (v) => v + "%")}${stat("Skott", m.shotsH, m.shotsA)}${stat("xG", m.xgH, m.xgA, (v) => Number(v).toFixed(1))}</div>
+    <h3>Övriga resultat</h3><ul class="results news">${roundRes.map((r) => `<li class="${r.h === S.userTeam || r.a === S.userTeam ? "me" : ""}"><span class="h">${esc(T(r.h).name)}</span><b>${r.hg}–${r.ag}${r.pens ? "*" : ""}</b><span>${esc(T(r.a).name)}</span></li>`).join("")}</ul>
     <div style="height:10px"></div><button class="btn full" data-close>Fortsätt</button>`;
 }
 
@@ -311,10 +427,21 @@ function closeSheet() { if (S?._locked) return; $("#sheet").hidden = true; delet
 
 // ---------- Händelser ----------
 document.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-act],[data-view],[data-mode],[data-league],[data-team],[data-p],[data-draft],[data-dpos],[data-sort],[data-form],[data-ment],[data-press],[data-slot],[data-swap],[data-ttab],[data-tfpos],[data-tfsort],[data-close]");
+  const el = e.target.closest("[data-job],[data-htment],[data-htpress],[data-htback],[data-htsub],[data-htin],[data-act],[data-view],[data-mode],[data-league],[data-team],[data-p],[data-draft],[data-dpos],[data-sort],[data-form],[data-ment],[data-press],[data-slot],[data-swap],[data-ttab],[data-tfpos],[data-tfsort],[data-close]");
   if (!el) return;
   const d = el.dataset;
   if (d.close !== undefined) return closeSheet();
+  if (d.job) { FM.takeJob(S, d.job); delete S.jobOffers; view = "home"; save(); toast(`Välkommen till ${T(d.job).name}!`); return render(); }
+  if (d.htment) { me().tactic.mentality = d.htment; return renderHT(); }
+  if (d.htpress) { me().tactic.press = d.htpress; return renderHT(); }
+  if (d.htback !== undefined) { S._ht.pick = null; return renderHT(); }
+  if (d.htsub !== undefined) { S._ht.pick = +d.htsub; return renderHT(); }
+  if (d.htin) {
+    const t = me(), m = S._ht.r.match, i = S._ht.pick, prev = t.lineup[i];
+    t.lineup[i] = +d.htin;
+    if (t.lineup.filter((id) => !m.htLine.includes(id)).length > 3) { t.lineup[i] = prev; toast("Max 3 byten"); }
+    S._ht.pick = null; return renderHT();
+  }
   if (d.swap) { // byt spelare i startelvan
     const t = me(), i = +d.slot, pid = +d.swap, cur = t.lineup.indexOf(pid);
     if (cur >= 0) t.lineup[cur] = t.lineup[i];
@@ -342,7 +469,7 @@ document.addEventListener("click", (e) => {
   if (d.tfpos !== undefined) { ui.tfPos = d.tfpos; return render(); }
   if (d.tfsort) { ui.tfSort = d.tfsort; return render(); }
   switch (d.act) {
-    case "continue": S = load(); view = "home"; return render();
+    case "continue": S = FM.migrate(load()); if (S.pending) { FM.finishPending(S); save(); } view = "home"; return render();
     case "new": if (load() && !confirm("Starta nytt spel? Det sparade spelet skrivs över.")) return; setup = { step: 1, mode: "normal" }; return render();
     case "back": setup = {}; return render();
     case "step1": setup.step = 1; return render();
@@ -353,13 +480,34 @@ document.addEventListener("click", (e) => {
       while (!FM.draftDone(S)) FM.draftAiPick(S); return draftContinue();
     case "play": return playMatch(true);
     case "quick": return playMatch(false);
-    case "quick5": { let last; for (let i = 0; i < 5 && !FM.seasonOver(S); i++) { FM.ensureLineup(S, me()); last = FM.playRound(S) || last; } if (last) S.lastMatch = last; save(); toast("5 omgångar spelade"); return render(); }
+    case "ht-go": return S._resume();
+    case "quick5": {
+      let last, n = 0;
+      while (n < 5 && !FM.seasonOver(S)) {
+        FM.ensureLineup(S, me());
+        const r = FM.playNext(S);
+        if (r.match) { last = r.match; S.lastKind = r.kind; }
+        if (r.kind === "league") n++;
+      }
+      playCupWithoutMe();
+      if (last) S.lastMatch = last; save(); toast("5 omgångar spelade"); return render();
+    }
     case "best11": me().lineup = FM.bestXI(S, me()); save(); return render();
     case "buy": { const err = FM.buy(S, +d.id); if (err) return toast(err); save(); toast(`${P(+d.id).name} är din!`); $("#sheet").hidden = true; return render(); }
     case "sell": return showOffers(+d.id);
     case "accept": { const o = S._offers.offers[+d.i], p = P(S._offers.id); const err = FM.sell(S, p.id, o); if (err) return toast(err);
       FM.ensureLineup(S, me()); save(); toast(`${p.name} såld till ${T(o.team).name} för ${FM.money(o.fee)}`); $("#sheet").hidden = true; return render(); }
-    case "next-season": { const sum = FM.endSeason(S); me().lineup = FM.bestXI(S, me()); save(); toast(`Säsong ${seasonLabel()} börjar!`); return render(); }
+    case "next-season": {
+      const sum = FM.endSeason(S); if (!S.fired) me().lineup = FM.bestXI(S, me()); save(); render();
+      if (!S.fired) openSheet(`<h2>Säsongen ${sum.season}/${String(sum.season + 1).slice(2)} – omdöme</h2>
+        <p>${esc(T(sum.team).name)} slutade <b>${sum.user.pos}:a</b>. Styrelsens mål: ${esc(sum.board?.text || "")} – <b class="${sum.board?.met ? "up" : "down"}">${sum.board?.met ? "uppnått" : "missat"}</b>.</p>
+        <p>Förtroende: <b>${sum.board?.confidence}%</b> (${sum.board?.delta >= 0 ? "+" : ""}${sum.board?.delta})${sum.board?.bonus ? ` · bonus <b class="gold">${FM.money(sum.board.bonus)}</b>` : ""}</p>
+        ${sum.board?.confidence < 40 ? `<p class="down small">Styrelsen är orolig – nästa säsong måste bli bättre.</p>` : ""}
+        <p class="small muted">Nytt mål för ${seasonLabel()}: <b>${esc(S.board.text)}</b>${S.board.cupTarget ? ` och minst ${S.board.cupTarget.toLowerCase()} i Europacupen` : FM.userInCup(S) ? "" : ""}.${FM.userInCup(S) ? " Ni är kvalificerade för Europacupen!" : ""}</p>
+        ${sum.retired.length ? `<p class="small">Slutade: ${sum.retired.map(esc).join(", ")}</p>` : ""}${sum.youth.length ? `<p class="small">Nya ungdomar: ${sum.youth.map(esc).join(", ")}</p>` : ""}
+        <button class="btn full" data-close>Kör igång säsongen</button>`);
+      return;
+    }
     case "menu": return openSheet(`<h2>Meny</h2><p class="small muted">Spelet sparas automatiskt efter varje händelse.</p>
       <button class="btn ghost full" data-act="to-start">Till startsidan</button><div style="height:8px"></div>
       <button class="btn red full" data-act="reset">Avsluta och radera spelet</button><div style="height:8px"></div><button class="btn full" data-close>Stäng</button>`);

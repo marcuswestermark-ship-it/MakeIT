@@ -1,5 +1,5 @@
 // Spelet fungerar helt offline efter första besöket.
-const CACHE = "fotboll-v1";
+const CACHE = "fotboll-v2";
 const FILES = ["./", "index.html", "style.css", "game.js", "ui.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png",
   "data/premier-league.js", "data/la-liga.js", "data/bundesliga.js", "data/ligue-1.js", "data/serie-a.js"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES))); self.skipWaiting(); });
